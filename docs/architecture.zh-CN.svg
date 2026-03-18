@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 340">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#38bdf8"/>
+      <stop offset="100%" style="stop-color:#818cf8"/>
+    </linearGradient>
+    <linearGradient id="boxA" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#38bdf8" stop-opacity="0.15"/>
+      <stop offset="100%" style="stop-color:#38bdf8" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="boxGH" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8" stop-opacity="0.15"/>
+      <stop offset="100%" style="stop-color:#818cf8" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="boxB" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#34d399" stop-opacity="0.15"/>
+      <stop offset="100%" style="stop-color:#34d399" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="820" height="340" rx="12" fill="url(#bg)"/>
+
+  <!-- ==================== TOP ROW: 3 Boxes + Arrows ==================== -->
+
+  <!-- 设备 A -->
+  <rect x="40" y="40" width="160" height="70" rx="10" fill="url(#boxA)" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="120" y="68" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">设备 A</text>
+  <text x="120" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">macOS</text>
+
+  <!-- GitHub -->
+  <rect x="310" y="40" width="200" height="70" rx="10" fill="url(#boxGH)" stroke="#818cf8" stroke-width="1.5"/>
+  <text x="410" y="68" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">GitHub</text>
+  <text x="410" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">私有仓库</text>
+
+  <!-- 设备 B -->
+  <rect x="620" y="40" width="160" height="70" rx="10" fill="url(#boxB)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="700" y="68" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">设备 B</text>
+  <text x="700" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">Windows</text>
+
+  <!-- Arrow A → GitHub -->
+  <line x1="200" y1="65" x2="305" y2="65" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <polygon points="305,61 313,65 305,69" fill="#38bdf8"/>
+  <text x="252" y="56" font-family="'SF Mono', 'Cascadia Code', 'Consolas', monospace" font-size="11" fill="#38bdf8" text-anchor="middle">opencode-push</text>
+
+  <!-- Arrow GitHub → B -->
+  <line x1="515" y1="85" x2="614" y2="85" stroke="#34d399" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <polygon points="515,81 507,85 515,89" fill="#34d399"/>
+  <text x="565" y="76" font-family="'SF Mono', 'Cascadia Code', 'Consolas', monospace" font-size="11" fill="#34d399" text-anchor="middle">opencode-pull</text>
+
+  <!-- ==================== VERTICAL LINES ==================== -->
+
+  <line x1="120" y1="110" x2="120" y2="300" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="410" y1="110" x2="410" y2="300" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="700" y1="110" x2="700" y2="300" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- ==================== LEFT: 设备 A 同步内容 ==================== -->
+
+  <circle cx="120" cy="150" r="3" fill="#38bdf8"/>
+  <text x="135" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">配置、技能、MCP</text>
+
+  <circle cx="120" cy="190" r="3" fill="#38bdf8"/>
+  <text x="135" y="195" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">SQLite 数据库 (Git LFS)</text>
+
+  <circle cx="120" cy="230" r="3" fill="#38bdf8"/>
+  <text x="135" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">状态 (频率、KV)</text>
+
+  <circle cx="120" cy="270" r="3" fill="#38bdf8"/>
+  <text x="135" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">agents/skills</text>
+
+  <!-- ==================== CENTER: 同步策略 ==================== -->
+
+  <circle cx="410" cy="150" r="3" fill="#818cf8"/>
+  <text x="410" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="middle">git rebase</text>
+
+  <circle cx="410" cy="190" r="3" fill="#818cf8"/>
+  <text x="410" y="195" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="middle">自动暂存</text>
+
+  <circle cx="410" cy="230" r="3" fill="#818cf8"/>
+  <text x="410" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="middle">强制模式</text>
+
+  <!-- ==================== RIGHT: 设备 B 同步内容 ==================== -->
+
+  <circle cx="700" cy="150" r="3" fill="#34d399"/>
+  <text x="685" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">配置、技能</text>
+
+  <circle cx="700" cy="190" r="3" fill="#34d399"/>
+  <text x="685" y="195" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">SQLite (LFS)</text>
+
+  <circle cx="700" cy="230" r="3" fill="#34d399"/>
+  <text x="685" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">状态 (频率)</text>
+
+  <circle cx="700" cy="270" r="3" fill="#34d399"/>
+  <text x="685" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">agents/skills</text>
+
+</svg>

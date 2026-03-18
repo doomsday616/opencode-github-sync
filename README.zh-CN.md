@@ -37,7 +37,7 @@
 ## 工作原理
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="架构图" width="700"/>
+  <img src="docs/architecture.zh-CN.svg" alt="架构图" width="700"/>
 </p>
 
 <p align="center">
