@@ -52,6 +52,25 @@ You use [OpenCode](https://opencode.ai) on multiple machines — a MacBook at th
 | 🔧 **Migration Repair** | Auto-restores migration records when pulling an older database |
 | 🖥️ **Cross-platform** | macOS (zsh) + Windows (PowerShell 7) |
 
+## New to This? Let OpenCode Do It For You
+
+If you're not familiar with Git, GitHub CLI, or environment variables — no worries. Just paste this prompt into OpenCode and let it handle everything:
+
+```
+I want to sync my OpenCode config and sessions across multiple machines.
+Help me set up everything from scratch:
+
+1. Check if Git, Git LFS, Node.js, and SQLite3 are installed — install anything missing
+2. Check if gh (GitHub CLI) is installed — if not, install it, then help me log in to GitHub
+3. Create a private GitHub repo for storing my sync data
+4. Clone the opencode-github-sync project, install the scripts and wrappers to the correct locations
+5. Set the SYNC_REMOTE_URL environment variable for me
+6. Run opencode-push once (config only) to test that everything works
+
+Note: Session sync must be run in a terminal OUTSIDE of OpenCode (it needs to shut down
+OpenCode to safely copy the database). Just prepare the command for me and I'll run it myself.
+```
+
 ## Quick Start
 
 ### 1. Clone & install

@@ -52,6 +52,24 @@
 | 🔧 **Migration 修复** | 拉取较旧数据库时自动恢复迁移记录 |
 | 🖥️ **跨平台** | macOS (zsh) + Windows (PowerShell 7) |
 
+## 不会？让 OpenCode 帮你搞定
+
+如果你不熟悉 Git、GitHub CLI 或环境变量这些东西 —— 没关系，把下面这段话直接粘贴到 OpenCode 里，让它帮你搞定一切：
+
+```
+我想在多台电脑之间同步 OpenCode 的配置和会话记录。帮我从零开始搞定所有前置准备：
+
+1. 检查我电脑上有没有装 Git、Git LFS、Node.js、SQLite3，没装的帮我装上
+2. 检查 gh（GitHub CLI）装没装，没有就帮我装，然后帮我登录 GitHub
+3. 帮我在 GitHub 上创建一个私有仓库用来存同步数据
+4. 把 opencode-github-sync 项目克隆下来，脚本和命令都帮我安装到正确的位置
+5. 帮我设好 SYNC_REMOTE_URL 环境变量
+6. 跑一次 opencode-push，只选配置同步，测试能不能正常工作
+
+注意：会话同步需要在 OpenCode 外面的终端里手动执行（因为要关闭 OpenCode 才能安全复制数据库），
+帮我准备好命令，我自己跑就行。
+```
+
 ## 快速开始
 
 ### 1. 克隆 & 安装
