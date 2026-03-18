@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420">
+  <defs>
+    <linearGradient id="titlebar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b3b3b"/>
+      <stop offset="100%" style="stop-color:#2d2d2d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Terminal window -->
+  <rect width="720" height="420" rx="10" fill="#1a1a2e"/>
+
+  <!-- Title bar -->
+  <rect width="720" height="36" rx="10" fill="url(#titlebar)"/>
+  <rect x="0" y="26" width="720" height="10" fill="url(#titlebar)"/>
+
+  <!-- Traffic lights -->
+  <circle cx="20" cy="18" r="6" fill="#ff5f57"/>
+  <circle cx="40" cy="18" r="6" fill="#febc2e"/>
+  <circle cx="60" cy="18" r="6" fill="#28c840"/>
+
+  <!-- Title text -->
+  <text x="360" y="23" font-family="'SF Mono', 'Cascadia Code', Consolas, monospace" font-size="13" fill="#999" text-anchor="middle">Terminal — opencode-push</text>
+
+  <!-- Terminal content -->
+  <g font-family="'SF Mono', 'Cascadia Code', Consolas, monospace" font-size="13.5">
+
+    <!-- Line 1: prompt -->
+    <text x="20" y="65" fill="#7dd3fc">$</text>
+    <text x="36" y="65" fill="#e2e8f0">opencode-push</text>
+
+    <!-- Line 2: blank -->
+
+    <!-- Line 3: header -->
+    <text x="20" y="95" fill="#38bdf8">┌──────────────────────────────────────────────┐</text>
+    <text x="20" y="115" fill="#38bdf8">│</text>
+    <text x="36" y="115" fill="#f8fafc">  OpenCode Sync — Push to Remote</text>
+    <text x="490" y="115" fill="#38bdf8">│</text>
+    <text x="20" y="135" fill="#38bdf8">└──────────────────────────────────────────────┘</text>
+
+    <!-- Line 4: question -->
+    <text x="20" y="165" fill="#fbbf24">?</text>
+    <text x="36" y="165" fill="#e2e8f0">What do you want to sync?</text>
+
+    <!-- Line 5-7: options -->
+    <text x="36" y="190" fill="#818cf8">❯</text>
+    <text x="56" y="190" fill="#7dd3fc">● Config only</text>
+    <text x="56" y="215" fill="#64748b">○ Sessions only</text>
+    <text x="56" y="240" fill="#64748b">○ Both</text>
+
+    <!-- Line 8: status -->
+    <text x="20" y="275" fill="#34d399">✔</text>
+    <text x="40" y="275" fill="#e2e8f0">Staging files from 4 directories...</text>
+
+    <text x="20" y="300" fill="#34d399">✔</text>
+    <text x="40" y="300" fill="#e2e8f0">Committed: 12 files changed</text>
+
+    <text x="20" y="325" fill="#34d399">✔</text>
+    <text x="40" y="325" fill="#e2e8f0">Pushed to remote (rebase, no conflicts)</text>
+
+    <!-- Line 9: done -->
+    <text x="20" y="360" fill="#38bdf8">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+    <text x="20" y="385" fill="#34d399">✨ Sync complete!</text>
+    <text x="170" y="385" fill="#94a3b8">Config pushed successfully.</text>
+
+  </g>
+</svg>

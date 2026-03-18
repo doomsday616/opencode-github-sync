@@ -40,6 +40,10 @@ You use [OpenCode](https://opencode.ai) on multiple machines — a MacBook at th
   <img src="docs/architecture.svg" alt="Architecture Diagram" width="700"/>
 </p>
 
+<p align="center">
+  <img src="docs/demo.svg" alt="Demo" width="600"/>
+</p>
+
 ## Features
 
 | Feature | Description |
