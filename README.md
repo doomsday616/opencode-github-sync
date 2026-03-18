@@ -36,17 +36,9 @@ You use [OpenCode](https://opencode.ai) on multiple machines — a MacBook at th
 
 ## How It Works
 
-```
-┌──────────┐    opencode-push     ┌──────────────┐    opencode-pull     ┌──────────┐
-│  Machine  │  ───────────────►   │   GitHub      │  ◄───────────────   │  Machine  │
-│  A (Mac)  │                     │  Private Repo │                     │ B (Win)   │
-└──────────┘                      └──────────────┘                      └──────────┘
-     │                                   │                                    │
-     ├─ config, skills, MCP              │                     config, skills ─┤
-     ├─ SQLite db (via Git LFS)     git rebase               SQLite db (LFS) ─┤
-     ├─ state (frecency, kv)        auto-stash             state (frecency) ──┤
-     └─ agents/skills                force mode            agents/skills ──────┘
-```
+<p align="center">
+  <img src="docs/architecture.svg" alt="Architecture Diagram" width="700"/>
+</p>
 
 ## Features
 

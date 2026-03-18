@@ -36,17 +36,9 @@
 
 ## 工作原理
 
-```
-┌──────────┐    opencode-push     ┌──────────────┐    opencode-pull     ┌──────────┐
-│  设备 A   │  ───────────────►   │   GitHub      │  ◄───────────────   │  设备 B   │
-│  (Mac)   │                     │   私有仓库     │                     │ (Windows) │
-└──────────┘                      └──────────────┘                      └──────────┘
-     │                                   │                                    │
-     ├─ 配置、技能、MCP                    │                       配置、技能 ──┤
-     ├─ SQLite 数据库 (Git LFS)      git rebase              SQLite (LFS) ──┤
-     ├─ 状态 (使用频率、KV)            自动暂存                状态 (频率) ────┤
-     └─ agents/skills               强制模式              agents/skills ────┘
-```
+<p align="center">
+  <img src="docs/architecture.svg" alt="架构图" width="700"/>
+</p>
 
 ## 功能特点
 
