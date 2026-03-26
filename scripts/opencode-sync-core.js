@@ -22,7 +22,7 @@ const fs = require("node:fs");
 
 // ── UI imports ───────────────────────────────────────────────────────
 
-const { c, logo, title, info, warn, error, success, done, step, note, section, completionBanner } = require("./ui");
+const { c, logo, title, info, warn, error, success, done, step, note, section } = require("./ui");
 
 // ── Paths ────────────────────────────────────────────────────────────
 
@@ -69,41 +69,31 @@ async function chooseTarget(action, force) {
   // @inquirer/select is ESM-only, use dynamic import
   const { default: select } = await import("@inquirer/select");
 
-  // Tokyo Night theme
+  // Tokyo Night theme colors
   const R = c.reset;
-  const HI = `${c.tn.green}${c.bold}`;
+  const HI = `${c.tn.cyan}${c.bold}`;
   const DIM = `${c.tn.gray}`;
 
   // Strip ANSI escape codes from a string
   const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
+  const menuItems = [
+    { name: `○ 仅配置`, value: "config", label: "仅配置" },
+    { name: `○ 仅会话`, value: "sessions", label: "仅会话" },
+    { name: `○ 全部`, value: "both", label: "全部" },
+    { name: `○ 退出`, value: "quit", label: "退出" },
+  ];
+
   const target = await select({
     message: `${c.tn.cyan}?${R} 你想同步什么？`,
-    choices: [
-      {
-        name: `● 仅配置`,
-        value: "config"
-      },
-      {
-        name: `○ 仅会话`,
-        value: "sessions"
-      },
-      {
-        name: `○ 全部`,
-        value: "both"
-      },
-      {
-        name: `○ 退出`,
-        value: "quit"
-      },
-    ],
+    choices: menuItems.map(item => ({ name: item.name, value: item.value })),
     theme: {
       prefix: "",
       icon: { cursor: " " },
       style: {
         highlight: (text) => {
           const plain = stripAnsi(text);
-          // Replace leading ○ with ● for selected item
+          // Replace ○ with ● for the currently focused item
           const selected = plain.replace(/^○/, "●");
           return `${HI}❯ ${selected}${R}`;
         },
@@ -113,26 +103,32 @@ async function chooseTarget(action, force) {
   });
 
   if (target === "quit") {
+    // Redraw menu with quit selected
+    for (const item of menuItems) {
+      if (item.value === "quit") {
+        console.log(`  ${HI}❯ ● ${item.label}${R}`);
+      } else {
+        console.log(`    ${DIM}○ ${item.label}${R}`);
+      }
+    }
     console.log(`  ${c.tn.gray}已取消${c.reset}`);
     process.exit(0);
   }
 
-  // Show selected choice (menu stays visible above in terminal)
-  const targetLabel = target === "both" ? "全部" : target === "config" ? "仅配置" : "仅会话";
-  success(`已选择：${targetLabel}`);
+  // Redraw the full menu with selection state
+  for (const item of menuItems) {
+    if (item.value === target) {
+      console.log(`  ${HI}❯ ● ${item.label}${R}`);
+    } else {
+      console.log(`    ${DIM}○ ${item.label}${R}`);
+    }
+  }
   console.log();
+
   return target;
 }
 
 // ── Runner ───────────────────────────────────────────────────────────
-
-function extractImportantLines(output) {
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-    .filter((line) => /[✔✖⚠ℹ📭📦💾🔧]/.test(line) || /最新|成功|失败|冲突|重启|Force|error|WARN|ERROR|数据库|迁移|改动|干净|暂存|提交|Push|Pull|Fetch/i.test(line));
-}
 
 function runScript(scriptPath, args, label) {
   if (!fs.existsSync(scriptPath)) {
@@ -143,8 +139,8 @@ function runScript(scriptPath, args, label) {
   return new Promise((resolve, reject) => {
     const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let frame = 0;
-    let stdout = "";
     let stderr = "";
+    let gotOutput = false;
 
     const child = spawn(process.execPath, [scriptPath, ...args], {
       cwd: SCRIPTS_DIR,
@@ -153,42 +149,53 @@ function runScript(scriptPath, args, label) {
     });
 
     const timer = setInterval(() => {
-      const glyph = spinnerFrames[frame % spinnerFrames.length];
-      frame++;
-      process.stdout.write(`\r  ${c.tn.gray}${glyph}${c.reset}  ${label}`);
+      if (!gotOutput) {
+        const glyph = spinnerFrames[frame % spinnerFrames.length];
+        frame++;
+        process.stdout.write(`\r  ${c.tn.gray}${glyph}${c.reset}  ${label}`);
+      }
     }, 80);
 
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stdout.on("data", (chunk) => {
+      if (!gotOutput) {
+        // Clear spinner line before first real output
+        process.stdout.write(`\r\x1b[2K`);
+        gotOutput = true;
+      }
+      process.stdout.write(chunk);
+    });
+
     child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
 
     child.on("close", (code) => {
       clearInterval(timer);
-      process.stdout.write(`\r\x1b[2K`);
+      if (!gotOutput) {
+        process.stdout.write(`\r\x1b[2K`);
+      }
 
       if (code === 0) {
-        const important = extractImportantLines(`${stdout}\n${stderr}`);
-        for (const line of important) console.log(line);
         resolve();
         return;
       }
 
       error(`${label}失败`);
-      const full = `${stdout}${stderr}`.trim();
-      if (full) console.log(full);
+      if (stderr.trim()) console.log(stderr.trim());
       reject(new Error(`${label} exited with code ${code}`));
     });
   });
 }
 
-function runConfigSync(action, force) {
+function runConfigSync(action, force, target) {
   const args = [action];
   if (force) args.push("--force");
+  if (target) args.push(`--target=${target}`, `--action=${action}`);
   return runScript(SYNC_CONFIG_SCRIPT, args, action === "status" ? "正在检查配置状态..." : `正在 ${action === "push" ? "Push" : "Pull"} 配置...`);
 }
 
-function runSessionSync(action, force) {
+function runSessionSync(action, force, target) {
   const args = [action];
   if (force) args.push("--force");
+  if (target) args.push(`--target=${target}`, `--action=${action}`);
   return runScript(SYNC_SESSIONS_SCRIPT, args, action === "status" ? "正在检查会话状态..." : `正在 ${action === "push" ? "Push" : "Pull"} 会话...`);
 }
 
@@ -202,22 +209,19 @@ async function dispatch(action, target, force) {
 
   switch (target) {
     case "config":
-      await runConfigSync(action, force);
+      await runConfigSync(action, force, target);
       break;
 
     case "sessions":
-      await runSessionSync(action, force);
+      await runSessionSync(action, force, target);
       break;
 
     case "both":
-      await runConfigSync(action, force);
+      await runConfigSync(action, force, "config");
       console.log();
-      await runSessionSync(action, force);
+      await runSessionSync(action, force, "sessions");
       break;
   }
-
-  // Final summary
-  completionBanner(action, target);
 }
 
 // ── Status ───────────────────────────────────────────────────────────

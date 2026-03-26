@@ -34,7 +34,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { execSync } = require("node:child_process");
-const { c, success, error, warn, step, formatStats, formatDiffStats } = require("./ui");
+const { c, success, error, warn, step, note, formatStats, formatDiffStats, completionBanner, upToDateBanner } = require("./ui");
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -414,7 +414,7 @@ function ensureRepo(root) {
 
 // ── Shared push/pull logic ──────────────────────────────────────────
 
-function doPush(root, force, stageInFn, msgPrefix) {
+function doPush(root, force, stageInFn, msgPrefix, action, target) {
   // ── Step 1: Ensure repo is initialized
   ensureRepo(root);
 
@@ -424,7 +424,6 @@ function doPush(root, force, stageInFn, msgPrefix) {
 
   // ── Step 3: Stage files into repo
   stageInFn(root);
-  success("正在从 4 个目录暂存文件...");
 
   // ── Step 4: Stage everything
   git("add -A", { cwd: root });
@@ -433,6 +432,7 @@ function doPush(root, force, stageInFn, msgPrefix) {
   const status = git("status --short", { cwd: root });
   if (!status.ok || !status.out) {
     success("已是最新");
+    upToDateBanner(action, target);
     return;
   }
 
@@ -443,13 +443,21 @@ function doPush(root, force, stageInFn, msgPrefix) {
   const renamed = lines.filter(l => l.startsWith("R ")).length;
   const totalChanges = added + modified + deleted + renamed;
 
+  // Show staging result with stats
+  success(`正在从 4 个目录暂存文件...  ${formatStats(added, modified, deleted, renamed)}`);
+  // List changed files
+  for (const line of lines) {
+    const status_char = line.charAt(0);
+    const filename = line.slice(3).trim();
+    const prefix = status_char === "A" || status_char === "?" ? "+" : status_char === "D" ? "-" : "~";
+    console.log(`${c.tn.gray}       ${prefix} ${filename}${c.reset}`);
+  }
+
   // ── Step 6: Commit
   const msg = commitMessage(msgPrefix);
   const commitResult = git(`commit -m "${msg}"`, { cwd: root });
   if (!commitResult.ok) {
-    error("Commit 失败");
-    console.error(commitResult.err || commitResult.out);
-    for (const line of lines) console.error(`  ${line}`);
+    error(`Commit 失败：${(commitResult.err || commitResult.out).split("\n")[0]}`);
     process.exit(1);
   }
   success(`已提交：${totalChanges} 个文件变更`);
@@ -460,11 +468,10 @@ function doPush(root, force, stageInFn, msgPrefix) {
     // First push
     const pushResult = git(`push -u origin ${BRANCH}`, { cwd: root });
     if (pushResult.ok) {
-      success(`首次 Push 成功：${formatStats(added, modified, deleted, renamed)}`);
+      success("已 Push 到 GitHub repo（首次 Push）");
+      completionBanner(action, target);
     } else {
-      error("Push 失败");
-      console.error(pushResult.err);
-      for (const line of lines) console.error(`  ${line}`);
+      error(`Push 失败：${(pushResult.err || "").split("\n")[0]}`);
       process.exit(1);
     }
     return;
@@ -475,11 +482,10 @@ function doPush(root, force, stageInFn, msgPrefix) {
   if (pullResult.ok) {
     const pushResult = git(`push origin ${BRANCH}`, { cwd: root });
     if (pushResult.ok) {
-      success(`已 Push 到 GitHub repo（rebase，无冲突）`);
+      success("已 Push 到 GitHub repo（rebase，无冲突）");
+      completionBanner(action, target);
     } else {
-      error("Push 失败");
-      console.error(pushResult.err);
-      for (const line of lines) console.error(`  ${line}`);
+      error(`Push 失败：${(pushResult.err || "").split("\n")[0]}`);
       process.exit(1);
     }
     return;
@@ -491,33 +497,32 @@ function doPush(root, force, stageInFn, msgPrefix) {
   if (force) {
     const fpResult = git(`push --force-with-lease origin ${BRANCH}`, { cwd: root });
     if (fpResult.ok) {
-      success(`已强制 Push 到 GitHub repo（force-with-lease）`);
+      success("已强制 Push 到 GitHub repo（force-with-lease）");
+      completionBanner(action, target);
     } else {
-      error("强制 Push 失败");
-      console.error(fpResult.err);
-      for (const line of lines) console.error(`  ${line}`);
+      error(`强制 Push 失败：${(fpResult.err || "").split("\n")[0]}`);
       process.exit(1);
     }
   } else {
     error("Rebase 冲突，请使用 --force 强制 Push");
-    for (const line of lines) console.error(`  ${line}`);
     process.exit(1);
   }
 }
 
-function doPull(root, force, stageOutFn, label) {
+function doPull(root, force, stageOutFn, label, action, target) {
   // ── Step 1: Ensure repo is initialized
   if (!isGitRepo(root)) {
     const mode = initRepo(root);
     if (mode === "fresh") {
-      console.log(`${c.gray}📭 GitHub repo 为空，请先在其他设备上 Push${c.reset}`);
+      console.log(`${c.tn.gray}📭 GitHub repo 为空，请先在其他设备上 Push${c.reset}`);
       return;
     }
     // mode === "fetched" — we already have the content
     const files = git("ls-files", { cwd: root });
     const count = files.ok ? files.out.split("\n").filter(Boolean).length : 0;
-    success(`首次 Pull 成功：📄+${count}`);
     stageOutFn(root);
+    success(`首次 Pull 完成：📄+${count}`);
+    completionBanner(action, target);
     return;
   }
 
@@ -550,21 +555,19 @@ function doPull(root, force, stageOutFn, label) {
     }
   }
 
-  // ── Step 3: Fetch and check diff before reset
-  success("正在从 GitHub Fetch 最新数据...");
+  // ── Step 3: Fetch
+  success("正在从 GitHub Fetch...");
   const fetchResult = git(`fetch origin ${BRANCH}`, { cwd: root });
   if (!fetchResult.ok) {
     error("Fetch 失败：" + fetchResult.err);
     process.exit(1);
   }
 
-  // Get detailed diff for stats
-  const headBefore = git("rev-parse HEAD", { cwd: root });
+  // ── Step 4: Check diff and reset
   const diff = git(`diff --stat HEAD origin/${BRANCH}`, { cwd: root });
   const hasIncoming = diff.ok && diff.out;
 
   if (hasIncoming) {
-    // Get name-status for emoji stats
     const nameStatus = git(`diff --name-status HEAD origin/${BRANCH}`, { cwd: root });
     const resetResult = git(`reset --hard origin/${BRANCH}`, { cwd: root });
     if (!resetResult.ok) {
@@ -572,7 +575,6 @@ function doPull(root, force, stageOutFn, label) {
       process.exit(1);
     }
 
-    // ── Step 4: Restore stashed local changes
     if (didStash) {
       const popResult = git("stash pop", { cwd: root });
       if (!popResult.ok) {
@@ -586,9 +588,9 @@ function doPull(root, force, stageOutFn, label) {
 
     stageOutFn(root);
     const stats = formatDiffStats(nameStatus.ok ? nameStatus.out : "");
-    success(`已从 GitHub Pull 到本地：${stats}`);
+    success(`已从 GitHub Pull：${stats}`);
+    completionBanner(action, target);
   } else {
-    // ── Step 4: Restore stashed local changes (even when up to date)
     if (didStash) {
       const popResult = git("stash pop", { cwd: root });
       if (!popResult.ok) {
@@ -600,8 +602,8 @@ function doPull(root, force, stageOutFn, label) {
       }
     }
 
-    stageOutFn(root);
     success("已是最新");
+    upToDateBanner(action, target);
   }
 
   if (label === "config") {
@@ -635,12 +637,12 @@ function cmdStatus(root) {
   }
 }
 
-function cmdPush(root, force) {
-  doPush(root, force, stageConfigDataIn, "sync");
+function cmdPush(root, force, action, target) {
+  doPush(root, force, stageConfigDataIn, "sync", action, target);
 }
 
-function cmdPull(root, force) {
-  doPull(root, force, stageConfigDataOut, "config");
+function cmdPull(root, force, action, target) {
+  doPull(root, force, stageConfigDataOut, "config", action, target);
 }
 
 // ── Main ─────────────────────────────────────────────────────────────
@@ -648,6 +650,8 @@ function cmdPull(root, force) {
 const args = process.argv.slice(2);
 const command = args[0];
 const force = args.includes("--force");
+const target = (args.find(a => a.startsWith("--target=")) || "").replace("--target=", "") || "config";
+const action = (args.find(a => a.startsWith("--action=")) || "").replace("--action=", "") || command;
 const root = getConfigRoot();
 
 if (!fs.existsSync(root)) {
@@ -661,10 +665,10 @@ if (!fs.existsSync(root)) {
 
 switch (command) {
   case "push":
-    cmdPush(root, force);
+    cmdPush(root, force, action, target);
     break;
   case "pull":
-    cmdPull(root, force);
+    cmdPull(root, force, action, target);
     break;
   case "status":
     cmdStatus(root);

@@ -22,21 +22,22 @@ const c = {
   white: "\x1b[37m",
   gray: "\x1b[90m",
 
-  // Tokyo Night palette (ANSI 256)
+  // Tokyo Night palette (true color RGB)
   tn: {
-    cyan: "\x1b[38;5;117m",    // #7dcfff — titles, accents
-    yellow: "\x1b[38;5;179m",  // #e0af68 — warnings
-    red: "\x1b[38;5;204m",     // #f7768e — errors, force
-    green: "\x1b[38;5;150m",   // #9ece6a — success, selected
-    purple: "\x1b[38;5;140m",  // #9d7cd8 — icons, decorative
-    gray: "\x1b[38;5;60m",     // #565f89 — borders, dim text
-    text: "\x1b[38;5;146m",    // #a9b1d6 — body text
+    cyan: "\x1b[38;2;92;156;245m",   // rgb(92,156,245) — titles, accents, selected item, separator
+    yellow: "\x1b[38;5;179m",       // #e0af68 — warnings
+    red: "\x1b[38;5;204m",          // #f7768e — errors, force
+    green: "\x1b[38;5;79m",         // #34d399 — success checkmarks
+    purple: "\x1b[38;5;140m",       // #9d7cd8 — icons, decorative
+    gray: "\x1b[38;5;60m",          // #565f89 — borders, dim text, unselected
+    text: "\x1b[38;5;146m",         // #a9b1d6 — body text
+    slate: "\x1b[38;5;103m",        // #94a3b8 — secondary text
   },
 
   // Semantic aliases
   muted: "\x1b[38;5;60m",
-  success: "\x1b[38;5;150m",
-  highlight: "\x1b[38;5;117m",
+  success: "\x1b[38;5;79m",
+  highlight: "\x1b[38;2;92;156;245m",
 };
 
 function paint(text, ...styles) {
@@ -54,8 +55,6 @@ function title(msg) {
 }
 
 function logo(action = "push", force = false) {
-  const BOX_W = 50;
-  const border = c.tn.cyan;
   const brandText = "OpenCode Sync";
   const brandStyled = c.bold + c.white + brandText + c.reset;
   const sep = c.tn.gray + " — " + c.reset;
@@ -64,19 +63,13 @@ function logo(action = "push", force = false) {
   const actionStyled = c.tn.cyan + actionText + c.reset;
   const forceTag = force ? "  " + c.tn.red + c.bold + "⚠ FORCE" + c.reset : "";
 
-  // Calculate padding (visible chars only)
-  const visLen = 2 + brandText.length + " — ".length + 2 + actionText.length + (force ? "  ⚠ FORCE".length : 0);
-  const pad = BOX_W - 4 - visLen; // 4 = "│  " + "│"
-
   console.log();
-  console.log(`  ${border}┌${"─".repeat(BOX_W - 2)}┐${c.reset}`);
-  console.log(`  ${border}│${c.reset}  ${brandStyled}${sep}${icon} ${actionStyled}${forceTag}${" ".repeat(Math.max(pad, 0))}${border}│${c.reset}`);
-  console.log(`  ${border}└${"─".repeat(BOX_W - 2)}┘${c.reset}`);
+  console.log(`  ${brandStyled}${sep}${icon} ${actionStyled}${forceTag}`);
   console.log();
 }
 
 function success(msg) {
-  printLine("✔", msg, c.tn.green);
+  console.log(`  ✅  ${msg}`);
 }
 
 function error(msg) {
@@ -105,7 +98,7 @@ function section(label, value = "") {
 
 function done(msg) {
   console.log();
-  printLine("✔", paint(msg, c.bold, c.tn.green), c.tn.green);
+  console.log(`  ✅  ${paint(msg, c.bold, c.tn.green)}`);
 }
 
 function separator() {
@@ -115,11 +108,16 @@ function separator() {
 
 function completionBanner(action, target) {
   separator();
-  console.log(`  ${c.tn.green}${c.bold}✨ 同步完成！${c.reset}`);
   const actionLabel = action === "push" ? "Push" : "Pull";
-  const targetLabel = target === "config" ? "配置文件" : target === "sessions" ? "会话数据" : "配置文件和会话数据";
-  const dest = action === "push" ? "到 GitHub" : "自 GitHub";
-  console.log(`  ${c.tn.text}OpenCode ${targetLabel}已成功 ${actionLabel} ${dest}${c.reset}`);
+  const targetLabel = target === "config" ? "配置文件" : target === "sessions" ? "会话数据" : "配置和会话";
+  console.log(`  \x1b[38;2;43;129;46m${c.bold}✨ 同步完成！${c.reset}  ${c.tn.slate}${targetLabel}已成功 ${actionLabel}${c.reset}`);
+  console.log();
+}
+
+function upToDateBanner(action, target) {
+  separator();
+  const targetLabel = target === "config" ? "配置文件" : target === "sessions" ? "会话数据" : "配置和会话";
+  console.log(`  \x1b[38;2;43;129;46m${c.bold}✨ 同步完成！${c.reset}  ${c.tn.slate}${targetLabel}已是最新${c.reset}`);
   console.log();
 }
 
@@ -172,6 +170,7 @@ module.exports = {
   done,
   separator,
   completionBanner,
+  upToDateBanner,
   formatStats,
   formatDiffStats,
 };

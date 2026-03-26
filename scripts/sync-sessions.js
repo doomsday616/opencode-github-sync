@@ -20,7 +20,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { execSync } = require("node:child_process");
-const { c, success, error, warn, info, step, formatStats, formatDiffStats } = require("./ui");
+const { c, success, error, warn, info, step, note, formatStats, formatDiffStats, completionBanner, upToDateBanner } = require("./ui");
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -80,11 +80,13 @@ function getRemoteUrl() {
 // ── Path helpers ─────────────────────────────────────────────────────
 
 function getConfigRoot() {
+  if (process.env.SYNC_CONFIG_ROOT) return process.env.SYNC_CONFIG_ROOT;
   const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
   return path.join(xdg, "opencode");
 }
 
 function getDataRoot() {
+  if (process.env.SYNC_DATA_ROOT) return process.env.SYNC_DATA_ROOT;
   const xdgData =
     process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
   return path.join(xdgData, "opencode");
@@ -202,17 +204,20 @@ function ensureGitConfig(root) {
   }
 }
 
+function skipLfs() {
+  return process.env.SYNC_SKIP_LFS === "1";
+}
+
 function ensureLfs(root) {
+  if (skipLfs()) return;
   const result = git("lfs install --local", { cwd: root });
-  if (!result.ok) {
-    console.log("Note: git-lfs not available, large files will be committed directly.");
-  }
+  // silently ignore if git-lfs not available
 }
 
 function initRepo(root) {
   const remote = getRemoteUrl();
-  step(`Initializing git repo in ${root}`);
-  step(`Remote: ${remote}`);
+  step(`正在初始化 git 仓库：${root}`);
+  step(`远端：${remote}`);
 
   ensureFile(path.join(root, ".gitignore"), DEFAULT_GITIGNORE);
   ensureFile(path.join(root, ".gitattributes"), DEFAULT_GITATTRIBUTES);
@@ -233,9 +238,7 @@ function initRepo(root) {
   }
 
   if (!fetchResult.ok) {
-    console.log(
-      `Note: fetch failed (${fetchResult.err || "unknown error"}). Starting fresh.`,
-    );
+    warn(`Fetch 失败（${fetchResult.err || "未知错误"}），从空仓库开始`);
   }
   return "fresh";
 }
@@ -243,9 +246,6 @@ function initRepo(root) {
 function ensureRepo(root) {
   if (!isGitRepo(root)) {
     const mode = initRepo(root);
-    if (mode === "fetched") {
-      console.log("Fetched existing content from remote.");
-    }
     return mode;
   }
   ensureGitConfig(root);
@@ -307,6 +307,9 @@ function killPids(pids) {
 }
 
 async function ensureNoOpenCode() {
+  // Skip process check in test environments
+  if (process.env.SYNC_SKIP_PROCESS_CHECK === "1") return true;
+
   for (let attempt = 1; attempt <= MAX_KILL_RETRIES; attempt++) {
     const pids = findOpenCodePids();
     if (pids.length === 0) {
@@ -564,20 +567,20 @@ function stageSessionDataOut(root) {
 
 // ── Push / Pull ──────────────────────────────────────────────────────
 
-function doPush(root, force) {
+function doPush(root, force, action, target) {
   ensureRepo(root);
 
   ensureFile(path.join(root, ".gitignore"), DEFAULT_GITIGNORE);
   ensureFile(path.join(root, ".gitattributes"), DEFAULT_GITATTRIBUTES);
 
   stageSessionDataIn(root);
-  success("正在从数据目录暂存文件...");
 
   git("add -A", { cwd: root });
 
   const status = git("status --short", { cwd: root });
   if (!status.ok || !status.out) {
     success("已是最新");
+    upToDateBanner(action, target);
     return;
   }
 
@@ -590,12 +593,20 @@ function doPush(root, force) {
   const renamed = lines.filter((l) => l.startsWith("R ")).length;
   const totalChanges = added + modified + deleted + renamed;
 
+  // Show staging result with stats
+  success(`正在从数据目录暂存文件...  ${formatStats(added, modified, deleted, renamed)}`);
+  // List changed files
+  for (const line of lines) {
+    const status_char = line.charAt(0);
+    const filename = line.slice(3).trim();
+    const prefix = status_char === "A" || status_char === "?" ? "+" : status_char === "D" ? "-" : "~";
+    console.log(`${c.tn.gray}       ${prefix} ${filename}${c.reset}`);
+  }
+
   const msg = commitMessage();
   const commitResult = git(`commit -m "${msg}"`, { cwd: root });
   if (!commitResult.ok) {
-    error("Commit 失败");
-    console.error(commitResult.err || commitResult.out);
-    for (const line of lines) console.error(`  ${line}`);
+    error(`Commit 失败：${(commitResult.err || commitResult.out).split("\n")[0]}`);
     process.exit(1);
   }
   success(`已提交：${totalChanges} 个文件变更`);
@@ -606,11 +617,10 @@ function doPush(root, force) {
     // First push
     const pushResult = git(`push -u origin ${BRANCH}`, { cwd: root });
     if (pushResult.ok) {
-      success(`首次 Push 成功：${formatStats(added, modified, deleted, renamed)}`);
+      success("已 Push 到 GitHub repo（首次 Push）");
+      completionBanner(action, target);
     } else {
-      error("Push 失败");
-      console.error(pushResult.err);
-      for (const line of lines) console.error(`  ${line}`);
+      error(`Push 失败：${(pushResult.err || "").split("\n")[0]}`);
       process.exit(1);
     }
     return;
@@ -621,11 +631,10 @@ function doPush(root, force) {
   if (pullResult.ok) {
     const pushResult = git(`push origin ${BRANCH}`, { cwd: root });
     if (pushResult.ok) {
-      success(`已 Push 到 GitHub repo（rebase，无冲突）`);
+      success("已 Push 到 GitHub repo（rebase，无冲突）");
+      completionBanner(action, target);
     } else {
-      error("Push 失败");
-      console.error(pushResult.err);
-      for (const line of lines) console.error(`  ${line}`);
+      error(`Push 失败：${(pushResult.err || "").split("\n")[0]}`);
       process.exit(1);
     }
     return;
@@ -639,11 +648,10 @@ function doPush(root, force) {
       cwd: root,
     });
     if (fpResult.ok) {
-      success(`已强制 Push 到 GitHub repo（force-with-lease）`);
+      success("已强制 Push 到 GitHub repo（force-with-lease）");
+      completionBanner(action, target);
     } else {
-      error("强制 Push 失败");
-      console.error(fpResult.err);
-      for (const line of lines) console.error(`  ${line}`);
+      error(`强制 Push 失败：${(fpResult.err || "").split("\n")[0]}`);
       process.exit(1);
     }
   } else {
@@ -652,17 +660,18 @@ function doPush(root, force) {
   }
 }
 
-function doPull(root, force) {
+function doPull(root, force, action, target) {
   if (!isGitRepo(root)) {
     const mode = initRepo(root);
     if (mode === "fresh") {
-      console.log(`  ${c.muted}📭 GitHub repo 为空，请先在其他设备上 Push${c.reset}`);
+      console.log(`  ${c.tn.gray}📭 GitHub repo 为空，请先在其他设备上 Push${c.reset}`);
       return;
     }
     const files = git("ls-files", { cwd: root });
     const count = files.ok ? files.out.split("\n").filter(Boolean).length : 0;
     stageSessionDataOut(root);
-    success(`首次 Pull 成功：📄+${count}`);
+    success(`首次 Pull 完成：📄+${count}`);
+    completionBanner(action, target);
     return;
   }
 
@@ -682,7 +691,6 @@ function doPull(root, force) {
       git("checkout -- .", { cwd: root });
       git("clean -fd", { cwd: root });
     } else {
-      // Auto-stash local changes so pull can proceed
       git("add -A", { cwd: root });
       const stashResult = git('stash push -m "opencode-sync auto-stash"', {
         cwd: root,
@@ -697,8 +705,8 @@ function doPull(root, force) {
     }
   }
 
-  // Fetch and check diff before reset
-  success("正在从 GitHub Fetch 最新数据...");
+  // Fetch
+  success("正在从 GitHub Fetch...");
   const fetchResult = git(`fetch origin ${BRANCH}`, { cwd: root });
   if (!fetchResult.ok) {
     error(`Fetch 失败：${fetchResult.err}`);
@@ -709,7 +717,6 @@ function doPull(root, force) {
   const hasIncoming = diff.ok && diff.out;
 
   if (hasIncoming) {
-    // Get name-status for emoji stats
     const nameStatus = git(`diff --name-status HEAD origin/${BRANCH}`, {
       cwd: root,
     });
@@ -719,7 +726,6 @@ function doPull(root, force) {
       process.exit(1);
     }
 
-    // Restore stashed local changes
     if (didStash) {
       const popResult = git("stash pop", { cwd: root });
       if (!popResult.ok) {
@@ -736,9 +742,9 @@ function doPull(root, force) {
 
     stageSessionDataOut(root);
     const stats = formatDiffStats(nameStatus.ok ? nameStatus.out : "");
-    success(`已从 GitHub Pull 到本地：${stats}`);
+    success(`已从 GitHub Pull：${stats}`);
+    completionBanner(action, target);
   } else {
-    // Restore stashed local changes (even when up to date)
     if (didStash) {
       const popResult = git("stash pop", { cwd: root });
       if (!popResult.ok) {
@@ -753,8 +759,8 @@ function doPull(root, force) {
       }
     }
 
-    stageSessionDataOut(root);
     success("已是最新");
+    upToDateBanner(action, target);
   }
 }
 
@@ -813,6 +819,8 @@ async function main() {
   const command = args[0];
   const force = args.includes("--force");
   const root = getConfigRoot();
+  const target = (args.find(a => a.startsWith("--target=")) || "").replace("--target=", "") || "sessions";
+  const action = (args.find(a => a.startsWith("--action=")) || "").replace("--action=", "") || command;
 
   if (!command || command === "help") {
     console.log("sync-sessions.js — 同步 OpenCode 会话数据到 GitHub\n");
@@ -834,13 +842,13 @@ async function main() {
     case "push": {
       const ok = await ensureNoOpenCode();
       if (!ok) process.exit(1);
-      doPush(root, force);
+      doPush(root, force, action, target);
       break;
     }
     case "pull": {
       const ok = await ensureNoOpenCode();
       if (!ok) process.exit(1);
-      doPull(root, force);
+      doPull(root, force, action, target);
       break;
     }
     case "status":
