@@ -349,6 +349,47 @@ describe("status", () => {
     expect(result.configured).toBe(false);
   });
 
+  it("does not report the override difference as uncommitted work", async () => {
+    // The config on disk always differs from the committed version once
+    // overrides are in use. Reporting that as pending work would show a warning
+    // that the user can never clear.
+    const a = makeMachine("a");
+    useMachine(a);
+    write(path.join(a.config, "opencode.jsonc"), '{ "model": "shared", "theme": "dark" }\n');
+    await push({ settings: settings(), roots: getRoots() });
+
+    const b = makeMachine("b");
+    useMachine(b);
+    write(path.join(b.config, "opencode-sync.overrides.jsonc"), '{ "model": "mine" }\n');
+    await pull({ settings: settings(), roots: getRoots() });
+
+    // git itself still sees a modified file — that is expected.
+    const porcelain = execFileSync("git", ["status", "--porcelain"], {
+      cwd: b.config,
+      encoding: "utf8",
+    });
+    expect(porcelain).toMatch(/opencode\.jsonc/);
+
+    // But the reported state is clean, because nothing is actually pending.
+    expect(status({ settings: settings(), roots: getRoots() }).dirty).toBe(0);
+  });
+
+  it("still reports a real edit made alongside an override", async () => {
+    const a = makeMachine("a");
+    useMachine(a);
+    write(path.join(a.config, "opencode.jsonc"), '{ "model": "shared", "theme": "dark" }\n');
+    await push({ settings: settings(), roots: getRoots() });
+
+    const b = makeMachine("b");
+    useMachine(b);
+    write(path.join(b.config, "opencode-sync.overrides.jsonc"), '{ "model": "mine" }\n');
+    await pull({ settings: settings(), roots: getRoots() });
+
+    // A change to a key the overrides do not claim is genuine pending work.
+    write(path.join(b.config, "opencode.jsonc"), '{ "model": "mine", "theme": "light" }\n');
+    expect(status({ settings: settings(), roots: getRoots() }).dirty).toBeGreaterThan(0);
+  });
+
   it("reports pending incoming commits", async () => {
     const a = makeMachine("a");
     useMachine(a);

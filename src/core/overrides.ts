@@ -114,6 +114,48 @@ function isPlainObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Serialise with sorted keys, so comparisons ignore key order. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (isPlainObject(value)) {
+    const entries = Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * True when the config on disk is, apart from override-owned keys, exactly what
+ * the repository already holds.
+ *
+ * Once overrides are in use the file on disk permanently differs from the
+ * committed version — that is the whole point. Plain `git status` therefore
+ * reports it as modified forever, which looks like pending work that never goes
+ * away. This lets the status command tell a real edit apart from the expected
+ * override difference.
+ *
+ * Returns `false` when there are no overrides, so callers fall back to git.
+ */
+export function configMatchesRepo(configRoot: string, previousText: string | undefined): boolean {
+  const overrides = loadOverrides(configRoot);
+  if (Object.keys(overrides).length === 0) return false;
+  if (!previousText) return false;
+
+  const configFile = findConfigFile(configRoot);
+  if (!configFile) return false;
+
+  try {
+    const effective = parseJsonc<Record<string, any>>(fs.readFileSync(configFile, "utf8"));
+    const previous = parseJsonc<Record<string, any>>(previousText);
+    return canonical(stripOverrides(effective, overrides, previous)) === canonical(previous);
+  } catch {
+    // Unparseable on either side: treat it as a genuine difference.
+    return false;
+  }
+}
+
 /**
  * Produce the text that should be committed for the config file.
  *

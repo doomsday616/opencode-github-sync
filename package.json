@@ -1,6 +1,6 @@
 {
   "name": "opencode-github-sync",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Sync your OpenCode config, skills, and selected sessions across machines via a private GitHub repo — as a plugin or a CLI.",
   "type": "module",
   "license": "MIT",

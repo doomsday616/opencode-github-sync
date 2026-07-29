@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseNameStatus } from "../src/core/git.js";
+import { parseNameStatus, parsePorcelainPaths } from "../src/core/git.js";
 import { commitMessage, hostAlias, sanitizeAlias } from "../src/core/host.js";
 import { deepMerge, parseJsonc } from "../src/core/jsonc.js";
 import { stripOverrides } from "../src/core/overrides.js";
@@ -153,6 +153,47 @@ describe("isLocalRuntimePath", () => {
 
   it("normalises Windows separators", () => {
     expect(isLocalRuntimePath("_data\\opencode.db")).toBe(true);
+  });
+});
+
+describe("parsePorcelainPaths", () => {
+  it("reads a staged entry", () => {
+    expect(parsePorcelainPaths("M  opencode.jsonc")).toEqual(["opencode.jsonc"]);
+  });
+
+  it("reads an unstaged entry that still has its leading space", () => {
+    expect(parsePorcelainPaths(" M opencode.jsonc")).toEqual(["opencode.jsonc"]);
+  });
+
+  it("reads an unstaged entry whose leading space was trimmed away", () => {
+    // The git wrapper trims its output, which eats the leading column of the
+    // first line. Slicing at a fixed offset silently returned "pencode.jsonc"
+    // here and made the caller miscount.
+    expect(parsePorcelainPaths("M opencode.jsonc")).toEqual(["opencode.jsonc"]);
+  });
+
+  it("reads untracked entries", () => {
+    expect(parsePorcelainPaths("?? command/new.md")).toEqual(["command/new.md"]);
+  });
+
+  it("reports the destination of a rename", () => {
+    expect(parsePorcelainPaths('R  "old name.md" -> "new name.md"')).toEqual(["new name.md"]);
+  });
+
+  it("unquotes a path containing spaces", () => {
+    // git always reports forward slashes, and quotes a path only when it holds
+    // unusual characters.
+    expect(parsePorcelainPaths('A  "skills/my skill/SKILL.md"')).toEqual([
+      "skills/my skill/SKILL.md",
+    ]);
+  });
+
+  it("handles several entries and ignores blank lines", () => {
+    expect(parsePorcelainPaths("M  a.md\n\n?? b.md\n D c.md\n")).toEqual(["a.md", "b.md", "c.md"]);
+  });
+
+  it("returns nothing for empty input", () => {
+    expect(parsePorcelainPaths("")).toEqual([]);
   });
 });
 

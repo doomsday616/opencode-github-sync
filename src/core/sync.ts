@@ -1,8 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import { type GitResult, git, isGitRepo, parseNameStatus, toGitError } from "./git.js";
+import {
+  type GitResult,
+  git,
+  isGitRepo,
+  parseNameStatus,
+  parsePorcelainPaths,
+  toGitError,
+} from "./git.js";
 import { commitMessage, hostAlias } from "./host.js";
-import { applyOverrides } from "./overrides.js";
+import { applyOverrides, configMatchesRepo, findConfigFile } from "./overrides.js";
 import { type Roots, getDatabasePath, getRoots } from "./paths.js";
 import {
   LOCAL_RUNTIME_PATHS,
@@ -493,7 +500,7 @@ export function status(options: SyncOptions = {}): StatusResult {
   base.behind = countCommits(root, `HEAD..origin/${branch}`);
 
   const dirty = git(["status", "--porcelain", "--", ".", ...excludePathspecs()], { cwd: root });
-  base.dirty = dirty.ok ? dirty.stdout.split("\n").filter(Boolean).length : 0;
+  base.dirty = dirty.ok ? countRealChanges(root, dirty.stdout) : 0;
 
   const log = git(["log", "-1", "--format=%s%n%cI"], { cwd: root });
   if (log.ok) {
@@ -508,6 +515,27 @@ function countShards(root: string): number {
   const dir = path.join(root, "_sessions");
   if (!fs.existsSync(dir)) return 0;
   return fs.readdirSync(dir).filter((f) => f.endsWith(".json.gz")).length;
+}
+
+/**
+ * Count genuinely uncommitted files.
+ *
+ * With overrides in use the config file always differs from the committed
+ * version, so a raw `git status` would report one modified file forever. That
+ * entry is dropped when the only difference is the overrides themselves.
+ */
+function countRealChanges(root: string, porcelain: string): number {
+  const paths = parsePorcelainPaths(porcelain);
+  if (paths.length === 0) return 0;
+
+  const configFile = findConfigFile(root);
+  if (!configFile) return paths.length;
+
+  const relative = path.relative(root, configFile).split(path.sep).join("/");
+  const head = git(["show", `HEAD:${relative}`], { cwd: root });
+  if (!configMatchesRepo(root, head.ok ? head.stdout : undefined)) return paths.length;
+
+  return paths.filter((file) => file !== relative).length;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

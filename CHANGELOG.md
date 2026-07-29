@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.1
+
+### Fixed
+- `status` no longer reports the config file as uncommitted work on machines
+  that use per-machine overrides. The file on disk is *supposed* to differ from
+  the committed version once overrides are in play, so plain `git status`
+  flagged it as modified forever — a warning the user could never clear. The
+  config is now compared with overrides subtracted, so only genuine edits count.
+- `git status --porcelain` output is parsed by pattern rather than at a fixed
+  column offset. Output is trimmed before parsing, which removed the leading
+  column of an unstaged entry and shifted every field after it, silently
+  yielding a truncated filename.
+
 ## 3.0.0
 
 Complete rewrite. The previous release was a set of shell-wrapped Node scripts;

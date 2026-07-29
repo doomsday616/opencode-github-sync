@@ -134,6 +134,33 @@ export function toGitError(operation: string, result: GitResult): Error {
     : new GitError(operation, result);
 }
 
+/**
+ * Extract the file paths from `git status --porcelain` output.
+ *
+ * The format is fixed-width — two status columns, a space, then the path — but
+ * this deliberately does not slice at a fixed offset. Output here is trimmed
+ * before parsing, which eats the leading space of an unstaged entry (` M file`)
+ * and shifts every subsequent column. Matching the status field by pattern
+ * instead survives that, as well as the quoting git applies to paths with
+ * unusual characters.
+ *
+ * Renames appear as `old -> new`; the destination is reported, since that is
+ * what exists afterwards.
+ */
+export function parsePorcelainPaths(output: string): string[] {
+  const paths: string[] = [];
+  for (const line of String(output ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    const withoutStatus = line.replace(/^\s*[MADRCU?!]{1,2}\s+/, "");
+    if (withoutStatus === line.trim() && !/^\s*[MADRCU?!]/.test(line)) continue;
+    const arrow = withoutStatus.lastIndexOf(" -> ");
+    const raw = arrow === -1 ? withoutStatus : withoutStatus.slice(arrow + 4);
+    const unquoted = raw.trim().replace(/^"(.*)"$/, "$1");
+    if (unquoted) paths.push(unquoted);
+  }
+  return paths;
+}
+
 export interface NameStatusEntry {
   kind: "added" | "modified" | "deleted" | "renamed";
   path: string;
