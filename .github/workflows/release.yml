@@ -27,6 +27,20 @@ jobs:
       - run: npm run check
       - run: npm run build
 
+      # A re-run of a release, or a tag pushed after publishing by hand, must not
+      # fail the whole workflow. npm rejects republishing a version, so check
+      # first and let the GitHub release step still run.
+      - name: Check whether this version is already on npm
+        id: published
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "opencode-github-sync@${version}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::opencode-github-sync@${version} is already published; skipping npm publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Publishing uses a granular token with the 2FA bypass enabled, since the
       # account's second factor is a passkey and cannot produce an OTP for CI.
       #
@@ -36,6 +50,7 @@ jobs:
       # all: configure it at npmjs.com/package/opencode-github-sync/access, then
       # delete both the NPM_TOKEN secret and the env block below.
       - name: Publish to npm
+        if: steps.published.outputs.exists == 'false'
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
