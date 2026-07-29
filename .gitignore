@@ -1,5 +1,7 @@
 node_modules/
-scripts/node_modules/
+dist/
+coverage/
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
-desktop.ini
+.vitest-tmp/

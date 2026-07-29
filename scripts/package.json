@@ -1,9 +1,0 @@
-{
-  "name": "opencode-sync-scripts",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Dependencies for OpenCode sync scripts",
-  "dependencies": {
-    "@inquirer/select": "^4.2.0"
-  }
-}

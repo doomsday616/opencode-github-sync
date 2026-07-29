@@ -1,0 +1,67 @@
+{
+  "name": "opencode-github-sync",
+  "version": "3.0.0",
+  "description": "Sync your OpenCode config, skills, and selected sessions across machines via a private GitHub repo — as a plugin or a CLI.",
+  "type": "module",
+  "license": "MIT",
+  "author": "doomsday616",
+  "homepage": "https://github.com/doomsday616/opencode-github-sync#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/doomsday616/opencode-github-sync.git"
+  },
+  "bugs": {
+    "url": "https://github.com/doomsday616/opencode-github-sync/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "sync",
+    "config-sync",
+    "dotfiles",
+    "github",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/plugin/index.js",
+  "types": "./dist/plugin/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/plugin/index.d.ts",
+      "default": "./dist/plugin/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "opencode-sync": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

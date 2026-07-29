@@ -1,34 +1,71 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="opencode-github-sync">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0f172a"/>
-      <stop offset="100%" style="stop-color:#1e293b"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#12141c"/>
+      <stop offset="55%" stop-color="#171a24"/>
+      <stop offset="100%" stop-color="#1b1424"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#38bdf8"/>
-      <stop offset="100%" style="stop-color:#818cf8"/>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7aa2f7"/>
+      <stop offset="55%" stop-color="#9d7cd8"/>
+      <stop offset="100%" stop-color="#bb9af7"/>
     </linearGradient>
+    <linearGradient id="wire" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#7aa2f7" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0v32" fill="none" stroke="#ffffff" stroke-opacity="0.028" stroke-width="1"/>
+    </pattern>
   </defs>
-  <rect width="800" height="200" rx="12" fill="url(#bg)"/>
-  <!-- Sync icon -->
-  <g transform="translate(80, 100)">
-    <circle cx="0" cy="0" r="32" fill="none" stroke="url(#accent)" stroke-width="3" stroke-dasharray="160" stroke-dashoffset="40"/>
-    <path d="M 16 -8 L 22 -16 L 22 0 Z" fill="#38bdf8"/>
-    <path d="M -16 8 L -22 16 L -22 0 Z" fill="#818cf8"/>
+
+  <rect width="1200" height="320" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="320" rx="24" fill="url(#grid)"/>
+  <ellipse cx="250" cy="120" rx="360" ry="220" fill="url(#glow)"/>
+  <ellipse cx="980" cy="240" rx="300" ry="200" fill="url(#glow)" opacity="0.6"/>
+
+  <!-- three machines, one shared repository -->
+  <g transform="translate(792 96)" opacity="0.95">
+    <g fill="none" stroke="url(#wire)" stroke-width="2">
+      <path d="M40 24 C 120 24, 120 64, 190 64"/>
+      <path d="M40 64 C 120 64, 120 64, 190 64"/>
+      <path d="M40 104 C 120 104, 120 64, 190 64"/>
+    </g>
+    <g fill="#1f2330" stroke="#3b4261" stroke-width="1.5">
+      <rect x="0" y="12" width="40" height="26" rx="5"/>
+      <rect x="0" y="52" width="40" height="26" rx="5"/>
+      <rect x="0" y="92" width="40" height="26" rx="5"/>
+    </g>
+    <g fill="#7aa2f7" opacity="0.85">
+      <circle cx="10" cy="25" r="2.5"/>
+      <circle cx="10" cy="65" r="2.5"/>
+      <circle cx="10" cy="105" r="2.5"/>
+    </g>
+    <rect x="190" y="34" width="132" height="60" rx="10" fill="#1c2030" stroke="#565f89" stroke-width="1.5"/>
+    <text x="256" y="60" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" fill="#c0caf5" text-anchor="middle">private repo</text>
+    <text x="256" y="80" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="#565f89" text-anchor="middle">one source of truth</text>
   </g>
-  <!-- Title -->
-  <text x="140" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="700" fill="#f8fafc">opencode-github-sync</text>
-  <!-- Subtitle -->
-  <text x="140" y="125" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#94a3b8">Sync your OpenCode world across every machine</text>
-  <!-- Badges area -->
-  <g transform="translate(140, 145)">
-    <rect x="0" y="0" width="80" height="22" rx="4" fill="#38bdf8" opacity="0.15"/>
-    <text x="40" y="15" font-family="system-ui, sans-serif" font-size="11" fill="#38bdf8" text-anchor="middle">Cross-platform</text>
-    <rect x="90" y="0" width="60" height="22" rx="4" fill="#818cf8" opacity="0.15"/>
-    <text x="120" y="15" font-family="system-ui, sans-serif" font-size="11" fill="#818cf8" text-anchor="middle">Git LFS</text>
-    <rect x="160" y="0" width="60" height="22" rx="4" fill="#34d399" opacity="0.15"/>
-    <text x="190" y="15" font-family="system-ui, sans-serif" font-size="11" fill="#34d399" text-anchor="middle">Node.js</text>
-    <rect x="230" y="0" width="50" height="22" rx="4" fill="#fbbf24" opacity="0.15"/>
-    <text x="255" y="15" font-family="system-ui, sans-serif" font-size="11" fill="#fbbf24" text-anchor="middle">MIT</text>
+
+  <text x="88" y="140" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="58" font-weight="700" fill="url(#mark)">opencode-sync</text>
+  <text x="90" y="184" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,sans-serif" font-size="21" fill="#a9b1d6">One config. Every machine. Nothing leaked.</text>
+
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13">
+    <g transform="translate(90 216)">
+      <rect width="150" height="30" rx="15" fill="#7aa2f7" fill-opacity="0.12" stroke="#7aa2f7" stroke-opacity="0.35"/>
+      <text x="75" y="20" fill="#7aa2f7" text-anchor="middle">plugin + CLI</text>
+    </g>
+    <g transform="translate(252 216)">
+      <rect width="186" height="30" rx="15" fill="#9ece6a" fill-opacity="0.12" stroke="#9ece6a" stroke-opacity="0.35"/>
+      <text x="93" y="20" fill="#9ece6a" text-anchor="middle">per-machine overrides</text>
+    </g>
+    <g transform="translate(450 216)">
+      <rect width="196" height="30" rx="15" fill="#bb9af7" fill-opacity="0.12" stroke="#bb9af7" stroke-opacity="0.35"/>
+      <text x="98" y="20" fill="#bb9af7" text-anchor="middle">selective session sync</text>
+    </g>
   </g>
 </svg>

@@ -1,3 +1,0 @@
-#!/bin/sh
-# opencode-push - Push OpenCode config or sessions to GitHub
-exec node "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/scripts/opencode-launcher.js" push "$@"

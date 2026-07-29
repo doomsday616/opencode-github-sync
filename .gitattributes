@@ -1,0 +1,5 @@
+# Keep the source tree LF everywhere so a Windows checkout does not produce
+# spurious whole-file diffs.
+* text=auto eol=lf
+*.png binary
+*.svg text eol=lf

@@ -1,107 +1,103 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 340">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 640" width="1120" height="640" role="img" aria-label="Architecture">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0f172a"/>
-      <stop offset="100%" style="stop-color:#1e293b"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#12141c"/>
+      <stop offset="100%" stop-color="#191622"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#38bdf8"/>
-      <stop offset="100%" style="stop-color:#818cf8"/>
-    </linearGradient>
-    <linearGradient id="boxA" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#38bdf8" stop-opacity="0.15"/>
-      <stop offset="100%" style="stop-color:#38bdf8" stop-opacity="0.05"/>
-    </linearGradient>
-    <linearGradient id="boxGH" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#818cf8" stop-opacity="0.15"/>
-      <stop offset="100%" style="stop-color:#818cf8" stop-opacity="0.05"/>
-    </linearGradient>
-    <linearGradient id="boxB" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#34d399" stop-opacity="0.15"/>
-      <stop offset="100%" style="stop-color:#34d399" stop-opacity="0.05"/>
-    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#565f89"/>
+    </marker>
+    <marker id="arrowUp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7aa2f7"/>
+    </marker>
+    <style>
+      .t   { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .s   { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+      .h   { fill: #c0caf5; font-size: 15px; font-weight: 600; }
+      .lbl { fill: #a9b1d6; font-size: 13px; }
+      .dim { fill: #565f89; font-size: 12px; }
+      .acc { fill: #7aa2f7; font-size: 12px; }
+      .grn { fill: #9ece6a; font-size: 12px; }
+      .pur { fill: #bb9af7; font-size: 12px; }
+    </style>
   </defs>
 
-  <!-- Background -->
-  <rect width="820" height="340" rx="12" fill="url(#bg)"/>
+  <rect width="1120" height="640" rx="20" fill="url(#bg)"/>
 
-  <!-- ==================== TOP ROW: 3 Boxes + Arrows ==================== -->
+  <text class="s h" x="48" y="52" font-size="18">How it fits together</text>
+  <text class="s dim" x="48" y="76">Two entry points, one core, one repository.</text>
 
-  <!-- Machine A box -->
-  <rect x="40" y="40" width="160" height="70" rx="10" fill="url(#boxA)" stroke="#38bdf8" stroke-width="1.5"/>
-  <text x="120" y="68" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">Machine A</text>
-  <text x="120" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">macOS</text>
+  <!-- entry points -->
+  <g transform="translate(48 108)">
+    <rect width="300" height="112" rx="12" fill="#1a1e2b" stroke="#3b4261" stroke-width="1.5"/>
+    <text class="s h" x="20" y="30">Entry points</text>
+    <text class="t acc" x="20" y="58">OpenCode plugin</text>
+    <text class="t dim" x="20" y="76">startup pull · idle push · opencode_sync tool</text>
+    <text class="t acc" x="20" y="96">opencode-sync CLI</text>
+  </g>
 
-  <!-- GitHub box -->
-  <rect x="310" y="40" width="200" height="70" rx="10" fill="url(#boxGH)" stroke="#818cf8" stroke-width="1.5"/>
-  <text x="410" y="68" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">GitHub</text>
-  <text x="410" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">Private Repo</text>
+  <!-- core -->
+  <g transform="translate(410 108)">
+    <rect width="300" height="112" rx="12" fill="#1a1e2b" stroke="#7aa2f7" stroke-width="1.5"/>
+    <text class="s h" x="20" y="30">Core</text>
+    <text class="t dim" x="20" y="54">staging · atomic replace · advisory lock</text>
+    <text class="t dim" x="20" y="72">overrides · session shards</text>
+    <text class="t dim" x="20" y="90">verified push · auto-stash pull</text>
+  </g>
 
-  <!-- Machine B box -->
-  <rect x="620" y="40" width="160" height="70" rx="10" fill="url(#boxB)" stroke="#34d399" stroke-width="1.5"/>
-  <text x="700" y="68" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">Machine B</text>
-  <text x="700" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">Windows</text>
+  <!-- remote -->
+  <g transform="translate(772 108)">
+    <rect width="300" height="112" rx="12" fill="#1a1e2b" stroke="#bb9af7" stroke-width="1.5"/>
+    <text class="s h" x="20" y="30">Private GitHub repo</text>
+    <text class="t dim" x="20" y="56">plain git — no server, no service</text>
+    <text class="t dim" x="20" y="76">inspectable, revertible history</text>
+  </g>
 
-  <!-- Arrow A → GitHub -->
-  <line x1="200" y1="65" x2="305" y2="65" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="6,3"/>
-  <polygon points="305,61 313,65 305,69" fill="#38bdf8"/>
-  <text x="252" y="56" font-family="'SF Mono', 'Cascadia Code', 'Consolas', monospace" font-size="11" fill="#38bdf8" text-anchor="middle">opencode-push</text>
+  <line x1="348" y1="164" x2="404" y2="164" stroke="#565f89" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="710" y1="164" x2="766" y2="164" stroke="#565f89" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="766" y1="184" x2="710" y2="184" stroke="#7aa2f7" stroke-width="2" marker-end="url(#arrowUp)"/>
 
-  <!-- Arrow GitHub → B -->
-  <line x1="515" y1="85" x2="614" y2="85" stroke="#34d399" stroke-width="1.5" stroke-dasharray="6,3"/>
-  <polygon points="515,81 507,85 515,89" fill="#34d399"/>
-  <text x="565" y="76" font-family="'SF Mono', 'Cascadia Code', 'Consolas', monospace" font-size="11" fill="#34d399" text-anchor="middle">opencode-pull</text>
+  <!-- mapping -->
+  <text class="s h" x="48" y="288">What travels</text>
 
-  <!-- ==================== VERTICAL LINES ==================== -->
+  <g transform="translate(48 308)">
+    <rect width="1024" height="150" rx="12" fill="#161a25" stroke="#292e42" stroke-width="1.5"/>
 
-  <!-- Line from Machine A -->
-  <line x1="120" y1="110" x2="120" y2="300" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+    <text class="t lbl"  x="24"  y="36">~/.config/opencode/</text>
+    <text class="t dim"  x="300" y="36">→</text>
+    <text class="t grn"  x="330" y="36">repo root</text>
+    <text class="t dim"  x="470" y="36">config, agents, commands, skills, themes</text>
 
-  <!-- Line from GitHub -->
-  <line x1="410" y1="110" x2="410" y2="300" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+    <text class="t lbl"  x="24"  y="66">~/.local/share/opencode/</text>
+    <text class="t dim"  x="300" y="66">→</text>
+    <text class="t grn"  x="330" y="66">_data/</text>
+    <text class="t dim"  x="470" y="66">project metadata, optional credentials</text>
 
-  <!-- Line from Machine B -->
-  <line x1="700" y1="110" x2="700" y2="300" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+    <text class="t lbl"  x="24"  y="96">~/.local/state/opencode/</text>
+    <text class="t dim"  x="300" y="96">→</text>
+    <text class="t grn"  x="330" y="96">_state/</text>
+    <text class="t dim"  x="470" y="96">frecency, model cache, prompt history</text>
 
-  <!-- ==================== LEFT: Machine A items ==================== -->
+    <text class="t lbl"  x="24"  y="126">~/.agents/skills/</text>
+    <text class="t dim"  x="300" y="126">→</text>
+    <text class="t grn"  x="330" y="126">_agents/</text>
+    <text class="t dim"  x="470" y="126">skills installed by the skills CLI</text>
+  </g>
 
-  <circle cx="120" cy="150" r="3" fill="#38bdf8"/>
-  <text x="135" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">config, skills, MCP</text>
+  <!-- what stays -->
+  <text class="s h" x="48" y="500">What stays put</text>
 
-  <circle cx="120" cy="190" r="3" fill="#38bdf8"/>
-  <text x="135" y="195" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">SQLite db (via Git LFS)</text>
+  <g transform="translate(48 518)">
+    <rect width="500" height="92" rx="12" fill="#161a25" stroke="#292e42" stroke-width="1.5"/>
+    <text class="t pur" x="24" y="30">opencode-sync.overrides.jsonc</text>
+    <text class="t dim" x="24" y="50">this machine's own settings, merged after every pull</text>
+    <text class="t dim" x="24" y="72">never committed, never pushed, never overwritten</text>
+  </g>
 
-  <circle cx="120" cy="230" r="3" fill="#38bdf8"/>
-  <text x="135" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">state (frecency, kv)</text>
-
-  <circle cx="120" cy="270" r="3" fill="#38bdf8"/>
-  <text x="135" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">agents/skills</text>
-
-  <!-- ==================== CENTER: GitHub features ==================== -->
-
-  <circle cx="410" cy="150" r="3" fill="#818cf8"/>
-  <text x="410" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="middle" dx="0" dy="0">
-    <tspan x="410" dy="0">git rebase</tspan>
-  </text>
-
-  <circle cx="410" cy="190" r="3" fill="#818cf8"/>
-  <text x="410" y="195" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="middle">auto-stash</text>
-
-  <circle cx="410" cy="230" r="3" fill="#818cf8"/>
-  <text x="410" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="middle">force mode</text>
-
-  <!-- ==================== RIGHT: Machine B items ==================== -->
-
-  <circle cx="700" cy="150" r="3" fill="#34d399"/>
-  <text x="685" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">config, skills</text>
-
-  <circle cx="700" cy="190" r="3" fill="#34d399"/>
-  <text x="685" y="195" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">SQLite db (LFS)</text>
-
-  <circle cx="700" cy="230" r="3" fill="#34d399"/>
-  <text x="685" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">state (frecency)</text>
-
-  <circle cx="700" cy="270" r="3" fill="#34d399"/>
-  <text x="685" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1" text-anchor="end">agents/skills</text>
-
+  <g transform="translate(572 518)">
+    <rect width="500" height="92" rx="12" fill="#161a25" stroke="#292e42" stroke-width="1.5"/>
+    <text class="t pur" x="24" y="30">opencode.db</text>
+    <text class="t dim" x="24" y="50">multi-gigabyte, unmergeable, machine-local</text>
+    <text class="t dim" x="24" y="72">selected sessions travel as shards in _sessions/</text>
+  </g>
 </svg>

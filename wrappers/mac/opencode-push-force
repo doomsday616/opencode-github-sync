@@ -1,3 +1,0 @@
-#!/bin/sh
-# opencode-push-force - Force push (overwrite remote on conflict)
-exec node "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/scripts/opencode-launcher.js" push --force "$@"

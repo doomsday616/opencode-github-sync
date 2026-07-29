@@ -1,3 +1,0 @@
-#!/bin/sh
-# opencode-pull - Pull OpenCode config or sessions from GitHub
-exec node "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/scripts/opencode-launcher.js" pull "$@"

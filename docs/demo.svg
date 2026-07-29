@@ -1,66 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" width="900" height="470" role="img" aria-label="Terminal demo">
   <defs>
-    <linearGradient id="titlebar" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#3b3b3b"/>
-      <stop offset="100%" style="stop-color:#2d2d2d"/>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#222634"/>
+      <stop offset="100%" stop-color="#1b1f2b"/>
     </linearGradient>
+    <style>
+      .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; }
+      .brand { fill: #7aa2f7; font-weight: 700; }
+      .accent{ fill: #bb9af7; font-weight: 700; }
+      .muted { fill: #6c779e; }
+      .faint { fill: #464f73; }
+      .text  { fill: #c0caf5; }
+      .green { fill: #9ece6a; }
+      .yellow{ fill: #e0af68; }
+      .cyan  { fill: #7dcfff; }
+    </style>
   </defs>
 
-  <!-- Terminal window -->
-  <rect width="720" height="420" rx="10" fill="#1a1a2e"/>
+  <rect width="900" height="470" rx="14" fill="#13161f"/>
+  <path d="M0 14 A14 14 0 0 1 14 0 H886 A14 14 0 0 1 900 14 V44 H0 Z" fill="url(#chrome)"/>
+  <g>
+    <circle cx="26" cy="22" r="6" fill="#f7768e"/>
+    <circle cx="48" cy="22" r="6" fill="#e0af68"/>
+    <circle cx="70" cy="22" r="6" fill="#9ece6a"/>
+  </g>
+  <text class="m faint" x="450" y="27" text-anchor="middle">opencode-sync</text>
 
-  <!-- Title bar -->
-  <rect width="720" height="36" rx="10" fill="url(#titlebar)"/>
-  <rect x="0" y="26" width="720" height="10" fill="url(#titlebar)"/>
+  <g class="m">
+    <text x="28" y="84"><tspan class="green">❯</tspan><tspan class="text" dx="10">opencode-sync push</tspan></text>
 
-  <!-- Traffic lights -->
-  <circle cx="20" cy="18" r="6" fill="#ff5f57"/>
-  <circle cx="40" cy="18" r="6" fill="#febc2e"/>
-  <circle cx="60" cy="18" r="6" fill="#28c840"/>
+    <text x="28" y="126"><tspan class="brand">opencode</tspan><tspan class="accent">-sync</tspan><tspan class="faint" dx="8">·</tspan><tspan class="muted" dx="8">push to GitHub</tspan></text>
 
-  <!-- Title text -->
-  <text x="360" y="23" font-family="'SF Mono', 'Cascadia Code', Consolas, monospace" font-size="13" fill="#999" text-anchor="middle">Terminal — opencode-push</text>
+    <text x="28" y="164"><tspan class="faint">›</tspan><tspan class="muted" dx="10">Staging local files</tspan></text>
+    <text x="28" y="190"><tspan class="faint">›</tspan><tspan class="muted" dx="10">Exporting sessions</tspan></text>
+    <text x="44" y="216"><tspan class="faint">Exported 6 session(s)</tspan></text>
 
-  <!-- Terminal content -->
-  <g font-family="'SF Mono', 'Cascadia Code', Consolas, monospace" font-size="13.5">
+    <text x="28" y="252"><tspan class="green">✓</tspan><tspan class="green" dx="10">+3 added</tspan><tspan class="yellow" dx="16">~2 modified</tspan><tspan class="cyan" dx="16">-1 deleted</tspan></text>
 
-    <!-- Line 1: prompt -->
-    <text x="20" y="65" fill="#7dd3fc">$</text>
-    <text x="36" y="65" fill="#e2e8f0">opencode-push</text>
+    <text x="44" y="278"><tspan class="green">+</tspan><tspan class="faint" dx="10">skills/homelab/SKILL.md</tspan></text>
+    <text x="44" y="300"><tspan class="green">+</tspan><tspan class="faint" dx="10">_sessions/ses_065cad1c.json.gz</tspan></text>
+    <text x="44" y="322"><tspan class="yellow">~</tspan><tspan class="faint" dx="10">opencode.jsonc</tspan></text>
+    <text x="44" y="344"><tspan class="yellow">~</tspan><tspan class="faint" dx="10">_agents/tavily/SKILL.md</tspan></text>
+    <text x="44" y="366"><tspan class="cyan">-</tspan><tspan class="faint" dx="10">command/retired.md</tspan></text>
 
-    <!-- Line 2: blank -->
+    <text x="28" y="406"><tspan class="accent">✦</tspan><tspan class="text" dx="10" font-weight="700">Pushed 6 change(s)</tspan></text>
 
-    <!-- Line 3: header -->
-    <text x="20" y="95" fill="#38bdf8">┌──────────────────────────────────────────────┐</text>
-    <text x="20" y="115" fill="#38bdf8">│</text>
-    <text x="36" y="115" fill="#f8fafc">  OpenCode Sync — Push to Remote</text>
-    <text x="490" y="115" fill="#38bdf8">│</text>
-    <text x="20" y="135" fill="#38bdf8">└──────────────────────────────────────────────┘</text>
-
-    <!-- Line 4: question -->
-    <text x="20" y="165" fill="#fbbf24">?</text>
-    <text x="36" y="165" fill="#e2e8f0">What do you want to sync?</text>
-
-    <!-- Line 5-7: options -->
-    <text x="36" y="190" fill="#818cf8">❯</text>
-    <text x="56" y="190" fill="#7dd3fc">● Config only</text>
-    <text x="56" y="215" fill="#64748b">○ Sessions only</text>
-    <text x="56" y="240" fill="#64748b">○ Both</text>
-
-    <!-- Line 8: status -->
-    <text x="20" y="275" fill="#34d399">✔</text>
-    <text x="40" y="275" fill="#e2e8f0">Staging files from 4 directories...</text>
-
-    <text x="20" y="300" fill="#34d399">✔</text>
-    <text x="40" y="300" fill="#e2e8f0">Committed: 12 files changed</text>
-
-    <text x="20" y="325" fill="#34d399">✔</text>
-    <text x="40" y="325" fill="#e2e8f0">Pushed to remote (rebase, no conflicts)</text>
-
-    <!-- Line 9: done -->
-    <text x="20" y="360" fill="#38bdf8">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
-    <text x="20" y="385" fill="#34d399">✨ Sync complete!</text>
-    <text x="170" y="385" fill="#94a3b8">Config pushed successfully.</text>
-
+    <text x="28" y="440"><tspan class="green">❯</tspan><tspan class="faint" dx="10">▊</tspan></text>
   </g>
 </svg>
