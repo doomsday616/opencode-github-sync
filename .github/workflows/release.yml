@@ -5,10 +5,6 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# Trusted publishing (OIDC). npm exchanges this short-lived identity token for a
-# scoped publish token, so no long-lived npm secret is stored anywhere.
-# Provenance attestations are generated automatically for public packages built
-# from public repositories — `--provenance` is not needed and would be redundant.
 permissions:
   contents: write
   id-token: write
@@ -24,15 +20,25 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           # Never restore a cache in a release build: the published artefact
-          # should be built from exactly what is in the tag.
+          # should come from exactly what is in the tag.
           cache: ""
 
       - run: npm ci
       - run: npm run check
       - run: npm run build
 
+      # Publishing uses a granular token with the 2FA bypass enabled, since the
+      # account's second factor is a passkey and cannot produce an OTP for CI.
+      #
+      # npm has announced that 2FA-bypass tokens lose direct publishing around
+      # January 2027 (https://gh.io/npm-gat-bypass2fa-deprecation). Before then
+      # this should move to trusted publishing (OIDC), which needs no secret at
+      # all: configure it at npmjs.com/package/opencode-github-sync/access, then
+      # delete both the NPM_TOKEN secret and the env block below.
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
