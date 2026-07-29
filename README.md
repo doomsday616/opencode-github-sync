@@ -344,6 +344,18 @@ round-trip are all exercised end to end.
 
 ---
 
+## Star history
+
+<a href="https://star-history.com/#doomsday616/opencode-github-sync&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=doomsday616/opencode-github-sync&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=doomsday616/opencode-github-sync&type=Date">
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=doomsday616/opencode-github-sync&type=Date" width="640">
+  </picture>
+</a>
+
+---
+
 ## License
 
 [MIT](./LICENSE)

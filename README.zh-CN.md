@@ -323,6 +323,18 @@ rebase、stash 以及覆盖机制的往返全都是端到端验证过的。
 
 ---
 
+## Star 趋势
+
+<a href="https://star-history.com/#doomsday616/opencode-github-sync&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=doomsday616/opencode-github-sync&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=doomsday616/opencode-github-sync&type=Date">
+    <img alt="Star 趋势图" src="https://api.star-history.com/svg?repos=doomsday616/opencode-github-sync&type=Date" width="640">
+  </picture>
+</a>
+
+---
+
 ## 许可证
 
 [MIT](./LICENSE)
