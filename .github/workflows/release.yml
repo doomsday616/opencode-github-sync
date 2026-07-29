@@ -5,6 +5,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Trusted publishing (OIDC). npm exchanges this short-lived identity token for a
+# scoped publish token, so no long-lived npm secret is stored anywhere.
+# Provenance attestations are generated automatically for public packages built
+# from public repositories — `--provenance` is not needed and would be redundant.
 permissions:
   contents: write
   id-token: write
@@ -17,18 +21,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
-          cache: npm
+          # Never restore a cache in a release build: the published artefact
+          # should be built from exactly what is in the tag.
+          cache: ""
 
       - run: npm ci
       - run: npm run check
       - run: npm run build
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
 
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
