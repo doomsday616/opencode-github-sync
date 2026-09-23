@@ -299,7 +299,15 @@ export function prunePluginCache(configRoot: string, cacheRoot: string): number 
     return 0;
   }
 
-  const enabled = new Set<string>((config?.plugin ?? []).map(pluginSpecToName));
+  const raw: unknown = (config as any)?.plugins ?? (config as any)?.plugin ?? [];
+  const specs = (Array.isArray(raw) ? raw : []).flatMap((entry) => {
+    if (typeof entry === "string") return [entry];
+    if (entry && typeof entry === "object" && typeof (entry as any).package === "string") {
+      return [(entry as any).package as string];
+    }
+    return [];
+  });
+  const enabled = new Set<string>(specs.map(pluginSpecToName));
   const pkg = readJson(cachePackage);
   if (!pkg) return 0;
 
