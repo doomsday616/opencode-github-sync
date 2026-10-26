@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.1.0
+
+### Added
+- **OpenCode 2 plugin entrypoint.** The package now exports both the V1 server
+  hook and the V2 plugin from its default export, so the same install loads on
+  OpenCode 1.x and 2.x. Thanks @vitaly74 (#6).
+
+### Fixed
+- Session import no longer cascade-deletes sessions. `INSERT OR REPLACE`
+  deletes the conflicting row before inserting, so replacing a shared project
+  row cascaded through `ON DELETE CASCADE` and removed every session imported
+  before it. It is replaced by a real `INSERT ... ON CONFLICT DO UPDATE` upsert
+  that never deletes and keeps newer-`time_updated`-wins per row (#2).
+- The synthetic `global` project is machine-specific, so it is no longer
+  exported, and importing an older shard that carries it never overwrites the
+  local row (#4).
+- Session shard export is deterministic: an unchanged session produces a
+  byte-identical shard, so it no longer shows up as a change on every push.
+  Thanks @aquelejota (#5, #3).
+- The session tests now actually run under vitest; previously `node:sqlite`
+  failed to load there and every session test returned early.
+- Plugin cache pruning reads both the `plugin` and `plugins` keys and
+  understands `[spec, options]` tuples and `{ package }` objects, so a plugin
+  listed in either form is no longer pruned from the cache.
+
+### Changed
+- The minimum supported OpenCode 1.x is now 1.3.4. OpenCode 1.0–1.3.3 cannot
+  load this release; stay on 3.0.1 there.
+
 ## 3.0.1
 
 ### Fixed
