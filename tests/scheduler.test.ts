@@ -22,10 +22,10 @@ import {
 
 const windowsSpec: ScheduleSpec = {
   node: "C:\\Program Files\\nodejs\\node.exe",
-  cli: "C:\\Users\\鸽子 Lee\\AppData\\Roaming\\npm\\node_modules\\opencode-github-sync\\dist\\cli\\index.js",
+  cli: "C:\\Users\\王小明 Wang\\AppData\\Roaming\\npm\\node_modules\\opencode-github-sync\\dist\\cli\\index.js",
   intervalMinutes: 5,
   env: {},
-  logDir: "C:\\Users\\鸽子 Lee\\.config\\opencode\\logs",
+  logDir: "C:\\Users\\王小明 Wang\\.config\\opencode\\logs",
 };
 
 const posixSpec: ScheduleSpec = {
@@ -39,7 +39,7 @@ const posixSpec: ScheduleSpec = {
 describe("Windows Task Scheduler", () => {
   it("renders the task XML with conhost --headless", () => {
     const xml = windowsTaskXml(windowsSpec, {
-      userId: "DESKTOP-1\\鸽子",
+      userId: "DESKTOP-1\\王小明",
       logonType: "InteractiveToken",
       launcher: { kind: "conhost", conhost: "C:\\Windows\\System32\\conhost.exe" },
       startBoundary: "2026-10-26T08:00:00",
@@ -58,12 +58,12 @@ describe("Windows Task Scheduler", () => {
 
   it("renders S4U with the wscript launcher", () => {
     const xml = windowsTaskXml(windowsSpec, {
-      userId: "CORP\\alex",
+      userId: "CORP\\user",
       logonType: "S4U",
       launcher: {
         kind: "wscript",
         wscript: "C:\\Windows\\System32\\wscript.exe",
-        vbs: "C:\\Users\\鸽子 Lee\\.config\\opencode\\opencode-sync-autosync.vbs",
+        vbs: "C:\\Users\\王小明 Wang\\.config\\opencode\\opencode-sync-autosync.vbs",
       },
       startBoundary: "2026-10-26T08:00:00",
     });
@@ -94,13 +94,13 @@ describe("Windows Task Scheduler", () => {
   });
 
   it("writes the VBScript launcher as UTF-16LE with a BOM", () => {
-    const text = windowsVbs({ ...windowsSpec, env: { SYNC_HOME: "C:\\Users\\鸽子 Lee" } });
+    const text = windowsVbs({ ...windowsSpec, env: { SYNC_HOME: "C:\\Users\\王小明 Wang" } });
     expect(text).toMatchSnapshot();
     const bytes = encodeVbs(text);
     expect(bytes[0]).toBe(0xff);
     expect(bytes[1]).toBe(0xfe);
     expect(bytes.subarray(2).toString("utf16le")).toBe(text);
-    expect(text).toContain("鸽子 Lee");
+    expect(text).toContain("王小明 Wang");
     expect(text).toContain(", 0, True)");
   });
 });
@@ -223,7 +223,7 @@ describe("installation wrappers (no real registration)", () => {
 
   it("registers through schtasks and verifies the next run time on Windows", () => {
     const runner = fakeRunner({
-      "whoami ": { ok: true, stdout: "pc\\alex\r\n" },
+      "whoami ": { ok: true, stdout: "pc\\user\r\n" },
       "powershell.exe": { ok: true, stdout: "2026-10-26T08:05:00\r\n" },
     });
     const ctx = base("win32", runner);

@@ -221,9 +221,12 @@ describe("large-change guard", () => {
     const a = machine("alpha", (s) => {
       s.guard.maxFiles = 5;
     });
+    write(path.join(a.roots.config, "opencode.jsonc"), "{}\n");
+    await pushFrom(a);
+    const before = git(["ls-remote", remote], { cwd: sandbox }).stdout;
     for (let i = 0; i < 8; i++) write(path.join(a.roots.config, "command", `c${i}.md`), `${i}\n`);
     await expect(pushFrom(a)).rejects.toBeInstanceOf(LargeChangeError);
-    expect(git(["ls-remote", remote], { cwd: sandbox }).stdout).toBe("");
+    expect(git(["ls-remote", remote], { cwd: sandbox }).stdout).toBe(before);
 
     let asked = 0;
     const confirmed = await pushFrom(a, {
@@ -234,6 +237,14 @@ describe("large-change guard", () => {
     });
     expect(asked).toBe(1);
     expect(confirmed.changed).toBe(true);
+  });
+
+  it("lets the first push into an empty repository carry the whole setup", async () => {
+    const a = machine("alpha", (s) => {
+      s.guard.maxFiles = 5;
+    });
+    for (let i = 0; i < 8; i++) write(path.join(a.roots.config, "command", `c${i}.md`), `${i}\n`);
+    expect((await pushFrom(a)).changed).toBe(true);
   });
 
   it("flags a single oversized file", async () => {

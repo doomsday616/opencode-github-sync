@@ -111,7 +111,9 @@ fi
 # --- Questions go to the terminal, not to the pipe ---
 
 HAVE_TTY=0
-if [ -r /dev/tty ] && [ -w /dev/tty ] && { : </dev/tty; } 2>/dev/null; then HAVE_TTY=1; fi
+# Probe in a subshell: in a strict POSIX shell (dash) a failed redirection on
+# a special builtin such as `:` exits the whole script, silently, with status 2.
+if (exec </dev/tty) 2>/dev/null; then HAVE_TTY=1; fi
 
 ask_yes_no() {
   # $1 = question. Default is No.

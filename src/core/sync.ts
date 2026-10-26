@@ -279,7 +279,11 @@ async function runPush(ctx: Context): Promise<SyncResult> {
   reporter.changes(summary, files);
   const guard = ctx.allowLarge
     ? undefined
-    : evaluateGuard(root, files, ctx.settings.guard ?? DEFAULT_SETTINGS.guard);
+    : firstPushGuard(
+        root,
+        branch,
+        evaluateGuard(root, files, ctx.settings.guard ?? DEFAULT_SETTINGS.guard),
+      );
   if (ctx.dryRun) {
     const result = done(
       "push",
@@ -417,8 +421,25 @@ function pushBranch(ctx: Context, alreadyCommitted: boolean): boolean {
   return integrated;
 }
 
+/**
+ * The first push into an empty repository sends the whole existing setup, so
+ * a high file count or total size is expected there. Only the single-file
+ * limit still applies: a multi-megabyte file is suspicious on any push.
+ */
+function firstPushGuard(root: string, branch: string, report: GuardReport): GuardReport {
+  if (git(["rev-parse", "--verify", `origin/${branch}`], { cwd: root }).ok) return report;
+  return { ...report, reasons: report.reasons.filter((r) => r === "file") };
+}
+
+/**
+ * True only when the push lost a race: the remote moved under us, either
+ * before the push (`fetch first`, `non-fast-forward`) or during the ref update
+ * itself (`cannot lock ref ... but expected`). A protected branch or a
+ * declined hook also prints "failed to push some refs", and must surface as a
+ * real failure rather than be retried for ever.
+ */
 function isRejected(result: GitResult): boolean {
-  return /non-fast-forward|fetch first|\[rejected\]|failed to push some refs|stale info/i.test(
+  return /\((fetch first|non-fast-forward)\)|stale info|cannot lock ref .* but expected/i.test(
     `${result.stderr}\n${result.stdout}`,
   );
 }

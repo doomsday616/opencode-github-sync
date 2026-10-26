@@ -47,25 +47,25 @@ exports[`Windows Task Scheduler > renders S4U with the wscript launcher 1`] = `
     </TimeTrigger>
     <LogonTrigger>
       <Enabled>true</Enabled>
-      <UserId>CORP\\alex</UserId>
+      <UserId>CORP\\user</UserId>
       <Delay>PT30S</Delay>
     </LogonTrigger>
     <SessionStateChangeTrigger>
       <Enabled>true</Enabled>
-      <UserId>CORP\\alex</UserId>
+      <UserId>CORP\\user</UserId>
       <Delay>PT15S</Delay>
       <StateChange>SessionUnlock</StateChange>
     </SessionStateChangeTrigger>
     <SessionStateChangeTrigger>
       <Enabled>true</Enabled>
-      <UserId>CORP\\alex</UserId>
+      <UserId>CORP\\user</UserId>
       <Delay>PT15S</Delay>
       <StateChange>RemoteConnect</StateChange>
     </SessionStateChangeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>CORP\\alex</UserId>
+      <UserId>CORP\\user</UserId>
       <LogonType>S4U</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
@@ -92,7 +92,7 @@ exports[`Windows Task Scheduler > renders S4U with the wscript launcher 1`] = `
   <Actions Context="Author">
     <Exec>
       <Command>C:\\Windows\\System32\\wscript.exe</Command>
-      <Arguments>//B //Nologo &quot;C:\\Users\\鸽子 Lee\\.config\\opencode\\opencode-sync-autosync.vbs&quot;</Arguments>
+      <Arguments>//B //Nologo &quot;C:\\Users\\王小明 Wang\\.config\\opencode\\opencode-sync-autosync.vbs&quot;</Arguments>
     </Exec>
   </Actions>
 </Task>
@@ -117,25 +117,25 @@ exports[`Windows Task Scheduler > renders the task XML with conhost --headless 1
     </TimeTrigger>
     <LogonTrigger>
       <Enabled>true</Enabled>
-      <UserId>DESKTOP-1\\鸽子</UserId>
+      <UserId>DESKTOP-1\\王小明</UserId>
       <Delay>PT30S</Delay>
     </LogonTrigger>
     <SessionStateChangeTrigger>
       <Enabled>true</Enabled>
-      <UserId>DESKTOP-1\\鸽子</UserId>
+      <UserId>DESKTOP-1\\王小明</UserId>
       <Delay>PT15S</Delay>
       <StateChange>SessionUnlock</StateChange>
     </SessionStateChangeTrigger>
     <SessionStateChangeTrigger>
       <Enabled>true</Enabled>
-      <UserId>DESKTOP-1\\鸽子</UserId>
+      <UserId>DESKTOP-1\\王小明</UserId>
       <Delay>PT15S</Delay>
       <StateChange>RemoteConnect</StateChange>
     </SessionStateChangeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>DESKTOP-1\\鸽子</UserId>
+      <UserId>DESKTOP-1\\王小明</UserId>
       <LogonType>InteractiveToken</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
@@ -162,7 +162,7 @@ exports[`Windows Task Scheduler > renders the task XML with conhost --headless 1
   <Actions Context="Author">
     <Exec>
       <Command>C:\\Windows\\System32\\conhost.exe</Command>
-      <Arguments>--headless &quot;C:\\Program Files\\nodejs\\node.exe&quot; &quot;C:\\Users\\鸽子 Lee\\AppData\\Roaming\\npm\\node_modules\\opencode-github-sync\\dist\\cli\\index.js&quot; autosync run</Arguments>
+      <Arguments>--headless &quot;C:\\Program Files\\nodejs\\node.exe&quot; &quot;C:\\Users\\王小明 Wang\\AppData\\Roaming\\npm\\node_modules\\opencode-github-sync\\dist\\cli\\index.js&quot; autosync run</Arguments>
     </Exec>
   </Actions>
 </Task>
@@ -175,8 +175,8 @@ exports[`Windows Task Scheduler > writes the VBScript launcher as UTF-16LE with 
 Dim shell, env, code
 Set shell = CreateObject("WScript.Shell")
 Set env = shell.Environment("PROCESS")
-env("SYNC_HOME") = "C:\\Users\\鸽子 Lee"
-code = shell.Run("""C:\\Program Files\\nodejs\\node.exe"" ""C:\\Users\\鸽子 Lee\\AppData\\Roaming\\npm\\node_modules\\opencode-github-sync\\dist\\cli\\index.js"" ""autosync"" ""run""", 0, True)
+env("SYNC_HOME") = "C:\\Users\\王小明 Wang"
+code = shell.Run("""C:\\Program Files\\nodejs\\node.exe"" ""C:\\Users\\王小明 Wang\\AppData\\Roaming\\npm\\node_modules\\opencode-github-sync\\dist\\cli\\index.js"" ""autosync"" ""run""", 0, True)
 WScript.Quit code
 "
 `;

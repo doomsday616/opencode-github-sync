@@ -33,6 +33,14 @@ describe("install.sh", () => {
     expect(spawnSync(sh!, ["-n", installSh]).status).toBe(0);
   });
 
+  it.skipIf(!hasCommand("dash"))("parses and plans under dash, the strictest common sh", () => {
+    expect(spawnSync("dash", ["-n", installSh]).status).toBe(0);
+    const out = execFileSync("dash", [installSh, "--dry-run", "--mode", "auto", "--repo", "o/r"], {
+      encoding: "utf8",
+    });
+    expect(out).toContain("opencode-sync setup --mode auto --repo o/r");
+  });
+
   it.skipIf(!hasCommand("shellcheck"))("passes shellcheck", () => {
     const result = spawnSync("shellcheck", ["-s", "sh", installSh], { encoding: "utf8" });
     expect(result.stdout + result.stderr).toBe("");
