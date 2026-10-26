@@ -27,11 +27,6 @@ export function setChildProxy(proxy: string | undefined): void {
   extra = proxyEnv(proxy);
 }
 
-/** Additional variables currently applied to children. */
-export function childEnvExtras(): Record<string, string> {
-  return { ...extra };
-}
-
 /** `process.env` plus the child-only additions plus caller-specific overrides. */
 export function childEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
   return { ...process.env, ...extra, ...overrides };

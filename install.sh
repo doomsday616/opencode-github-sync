@@ -157,6 +157,10 @@ offer_install() {
   say "It can be installed with:"
   say "  $cmd"
   if [ "$YES" -eq 1 ] || ask_yes_no "Run that now?"; then
+    case "$cmd" in
+      # A fresh container has no package index yet; install would fail.
+      *apt-get*) cmd="sudo apt-get update && $cmd" ;;
+    esac
     if [ "$HAVE_TTY" -eq 1 ]; then sh -c "$cmd" </dev/tty; else sh -c "$cmd"; fi
   else
     say "Not installed. Run the command above, then this installer again."
@@ -168,17 +172,30 @@ node_major() {
   node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0
 }
 
+node_ok() {
+  command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && [ "$(node_major)" -ge 18 ]
+}
+
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
   offer_install node "Node.js (18 or newer) and npm are needed and were not found."
-fi
-if [ "$(node_major)" -lt 18 ]; then
+elif [ "$(node_major)" -lt 18 ]; then
   offer_install node "Node.js $(node -v) is too old; 18 or newer is needed."
+fi
+# A distribution package can still be older than 18, so check the result.
+if ! node_ok; then
+  err "Node.js 18 or newer with npm is still not available."
+  say "Install it from https://nodejs.org and run this again."
+  exit 1
 fi
 if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=5)?0:1)' 2>/dev/null; then
   say "Note: Node.js $(node -v) syncs configuration fine; session sync needs 22.5 or newer."
 fi
 if ! command -v git >/dev/null 2>&1; then
   offer_install git "git is needed and was not found."
+  if ! command -v git >/dev/null 2>&1; then
+    err "git is still not available."
+    exit 1
+  fi
 fi
 
 # --- Install ---

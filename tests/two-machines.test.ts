@@ -334,6 +334,37 @@ describe("history", () => {
   });
 });
 
+describe("forced pull recovery", () => {
+  it("saves new folders, non-ASCII names and local-only skills before replacing them", async () => {
+    const a = machine("alpha");
+    write(path.join(a.roots.config, "opencode.jsonc"), "{}\n");
+    write(path.join(a.roots.agents, "shared", "SKILL.md"), "shared\n");
+    await pushFrom(a);
+
+    const b = machine("beta");
+    await pullTo(b);
+    write(path.join(a.roots.config, "AGENTS.md"), "from alpha\n");
+    await pushFrom(a);
+
+    write(path.join(b.roots.config, "notes", "draft.md"), "draft\n");
+    write(path.join(b.roots.config, "技能.md"), "中文\n");
+    write(path.join(b.roots.agents, "mine", "SKILL.md"), "mine\n");
+    await pullTo(b, { force: true });
+
+    expect(fs.existsSync(path.join(b.roots.config, "notes"))).toBe(false);
+    expect(fs.existsSync(path.join(b.roots.agents, "mine"))).toBe(false);
+    const saved = listRecovery(b.roots).map((dir) => dir);
+    const find = (rel: string) => saved.find((dir) => fs.existsSync(path.join(dir, rel)));
+    expect(read(path.join(find(path.join("notes", "draft.md"))!, "notes", "draft.md"))).toBe(
+      "draft\n",
+    );
+    expect(read(path.join(find("技能.md")!, "技能.md"))).toBe("中文\n");
+    const skill = path.join("skills", "mine", "SKILL.md");
+    expect(read(path.join(find(skill)!, skill))).toBe("mine\n");
+    expect(find(path.join("skills", "shared", "SKILL.md"))).toBeUndefined();
+  });
+});
+
 describe("first link", () => {
   it("compares local files with the remote without touching either", async () => {
     const a = machine("alpha");

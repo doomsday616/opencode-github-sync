@@ -137,6 +137,43 @@ describe("Linux systemd and cron", () => {
     expect(editCrontab(added, undefined)).toBe(existing);
     expect(line).toContain(CRON_MARKER);
   });
+
+  it("escapes cron and systemd specials and keeps long intervals honest", () => {
+    const odd = { ...posixSpec, cli: "/opt/50%/$HOME/cli.js", intervalMinutes: 120 };
+    const line = crontabLine(odd);
+    expect(line.startsWith("0 */2 * * * ")).toBe(true);
+    expect(line).toContain("50\\%");
+    expect(systemdService(odd)).toContain("50%%/$$HOME");
+  });
+
+  it("clears the cron entry when systemd takes over", () => {
+    const runner = fakeRunner({
+      "crontab -l": {
+        ok: true,
+        stdout: `0 3 * * * /usr/bin/backup\n*/5 * * * * x ${CRON_MARKER}\n`,
+      },
+    });
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "ogs-sched-"));
+    const saved = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(home, ".config");
+    try {
+      const result = installScheduler({
+        platform: "linux",
+        spec: { ...posixSpec, logDir: path.join(home, "logs") },
+        home,
+        runner,
+        launcherDir: path.join(home, "data"),
+        runWhenLoggedOff: false,
+        elevated: false,
+      });
+      expect(result.kind).toBe("systemd");
+      expect(runner.calls).toContain("crontab - <<0 3 * * * /usr/bin/backup");
+    } finally {
+      if (saved === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = saved;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
 });
 
 /** A fake platform tool runner, so installation logic runs without registering anything. */
@@ -164,7 +201,7 @@ describe("installation wrappers (no real registration)", () => {
       spec: { ...posixSpec, logDir: path.join(home, "logs") },
       home,
       runner,
-      configRoot: path.join(home, "config"),
+      launcherDir: path.join(home, "data"),
       runWhenLoggedOff: false,
       elevated: false,
     };

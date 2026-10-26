@@ -20,7 +20,8 @@ export function redactText(text: string): string {
       .replace(/\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[REDACTED]")
       .replace(/\bnpm_[A-Za-z0-9]{20,}\b/g, "[REDACTED]")
       .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[REDACTED]")
-      .replace(/(bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[REDACTED]")
+      .replace(/((?:bearer|basic)\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[REDACTED]")
+      .replace(/(authorization:\s*token\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[REDACTED]")
       // key = value / "key": "value" pairs whose key names a secret
       .replace(
         /("?[A-Za-z0-9_-]*(?:token|secret|password|passwd|api[_-]?key)[A-Za-z0-9_-]*"?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,}]+)/gi,

@@ -527,6 +527,8 @@ function runHelp(): void {
   command("--force", t("helpForce"));
   command("--dry-run", t("helpDryRun"));
   command("--allow-large", t("helpAllowLarge"));
+  command("--yes", t("helpYes"));
+  command("--prefer repo|local", t("helpPrefer"));
   command("--lang en|zh-CN", t("helpLang"));
 
   write();

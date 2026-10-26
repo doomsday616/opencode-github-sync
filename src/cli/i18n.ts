@@ -147,7 +147,7 @@ const en = {
   intervalCustom: "Custom",
   intervalMinutes: "{n} min",
   loggedOffExplain:
-    "Windows only registers a job that runs while you are signed out from an administrator terminal. Without that it runs while you are signed in.",
+    "Windows only registers a job that runs while you are signed out from an administrator terminal. Without that it runs while you are signed in. While signed out, saved HTTPS logins are not available to git, so use an SSH remote for this mode.",
   loggedOffNeedAdmin:
     "This terminal is not elevated. The setting is saved and applies the next time autosync is installed from an administrator terminal.",
   notWindows: "This setting only applies on Windows.",
@@ -386,6 +386,9 @@ const en = {
   helpDryRun: "Report what would change without doing it",
   helpLang: "Interface language: en or zh-CN",
   helpAllowLarge: "Push even when the large-change guard objects",
+  helpYes: "Answer yes to confirmations (needed without a terminal)",
+  helpPrefer:
+    "setup: on a first sync with an existing repository, keep the repository's files (repo, default) or this machine's (local)",
 
   // notifications from the scheduled job
   ntBackoffTitle: "OpenCode sync is failing",
@@ -532,7 +535,7 @@ const zhCN: Catalog = {
   intervalCustom: "自定义",
   intervalMinutes: "{n} 分钟",
   loggedOffExplain:
-    "Windows 只有在管理员终端里才能注册“注销后也运行”的任务。否则只在你登录时运行。",
+    "Windows 只有在管理员终端里才能注册“注销后也运行”的任务。否则只在你登录时运行。注销后 git 读不到你保存的 HTTPS 登录信息，这种模式请用 SSH 地址连接仓库。",
   loggedOffNeedAdmin: "当前终端没有管理员权限。设置已保存，下次在管理员终端里安装自动同步时生效。",
   notWindows: "这项设置只对 Windows 有效。",
   pause1h: "1 小时",
@@ -757,6 +760,8 @@ const zhCN: Catalog = {
   helpDryRun: "只报告会改什么，不实际执行",
   helpLang: "界面语言：en 或 zh-CN",
   helpAllowLarge: "即使大改动保护反对也照样推送",
+  helpYes: "确认提示一律回答“是”（没有终端时需要）",
+  helpPrefer: "setup：仓库里已有内容时，第一次同步保留仓库的文件（repo，默认）还是本机的（local）",
 
   ntBackoffTitle: "OpenCode 配置同步出错",
   ntBackoffBody: "已连续失败 {n} 次，现在每 {m} 分钟重试一次。详情：opencode-sync autosync status",

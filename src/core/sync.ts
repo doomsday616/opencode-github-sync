@@ -15,6 +15,7 @@ import {
   isGitRepo,
   parseNameStatus,
   parsePorcelainPaths,
+  parsePorcelainZ,
   toGitError,
 } from "./git.js";
 import { type GuardReport, LargeChangeError, evaluateGuard, writeLocalExcludes } from "./guard.js";
@@ -235,7 +236,7 @@ async function runPush(ctx: Context): Promise<SyncResult> {
         );
       }
       reporter.step(`Pushing ${ahead} pending commit(s)`);
-      const integrated = pushBranch(ctx, true);
+      const integrated = pushBranch(ctx);
       await finishPush(ctx, integrated);
       return done(
         "push",
@@ -317,7 +318,7 @@ async function runPush(ctx: Context): Promise<SyncResult> {
   // trailing HEAD and writes the integrated tree out before staging again.
   writeStageOutMark(root);
 
-  const integrated = pushBranch(ctx, false);
+  const integrated = pushBranch(ctx);
   await finishPush(ctx, integrated);
   return done(
     "push",
@@ -348,7 +349,7 @@ async function finishPush(ctx: Context, integrated: boolean): Promise<void> {
 }
 
 /** Push the branch. Returns true when a rebase integrated remote commits. */
-function pushBranch(ctx: Context, alreadyCommitted: boolean): boolean {
+function pushBranch(ctx: Context): boolean {
   const { root, branch, force, reporter } = ctx;
 
   const hasRemoteBranch = git(["rev-parse", `origin/${branch}`], { cwd: root }).ok;
@@ -417,7 +418,6 @@ function pushBranch(ctx: Context, alreadyCommitted: boolean): boolean {
     restoreDisabled(root, ctx.disabled, aside);
   }
   assertPushLanded(root, branch, "Push");
-  void alreadyCommitted;
   return integrated;
 }
 
@@ -439,7 +439,7 @@ function firstPushGuard(root: string, branch: string, report: GuardReport): Guar
  * real failure rather than be retried for ever.
  */
 function isRejected(result: GitResult): boolean {
-  return /\((fetch first|non-fast-forward)\)|stale info|cannot lock ref .* but expected/i.test(
+  return /\((fetch first|non-fast-forward)\)|cannot lock ref .* but expected/i.test(
     `${result.stderr}\n${result.stdout}`,
   );
 }
@@ -846,13 +846,19 @@ function saveOverwritten(ctx: Context, ref: string, label: string): string | und
   const candidates = new Set<string>();
   const hasHead = git(["rev-parse", "--verify", "HEAD"], { cwd: root }).ok;
   if (hasHead) {
-    const diff = git(["diff", "--name-only", "HEAD", ref], { cwd: root });
-    for (const p of diff.ok ? diff.stdout.split("\n") : []) if (p) candidates.add(p);
-    const dirty = git(["status", "--porcelain", "--", ".", ...excludePathspecs()], { cwd: root });
-    for (const p of parsePorcelainPaths(dirty.ok ? dirty.stdout : "")) candidates.add(p);
+    const diff = git(["diff", "-z", "--name-only", "HEAD", ref], { cwd: root });
+    for (const p of diff.ok ? diff.stdout.split("\0") : []) if (p) candidates.add(p);
+    // `--untracked-files=all` lists each file in a new folder; the default
+    // reports the folder alone, which is not a file and would be skipped
+    // right before `git clean` deletes it.
+    const dirty = git(
+      ["status", "-z", "--porcelain", "--untracked-files=all", "--", ".", ...excludePathspecs()],
+      { cwd: root },
+    );
+    for (const p of parsePorcelainZ(dirty.ok ? dirty.stdout : "")) candidates.add(p);
   } else {
-    const files = git(["ls-tree", "-r", "--name-only", ref], { cwd: root });
-    for (const p of files.ok ? files.stdout.split("\n") : []) if (p) candidates.add(p);
+    const files = git(["ls-tree", "-z", "-r", "--name-only", ref], { cwd: root });
+    for (const p of files.ok ? files.stdout.split("\0") : []) if (p) candidates.add(p);
   }
   const entries = [...candidates]
     .filter((rel) => !isLocalRuntimePath(rel))

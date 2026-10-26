@@ -61,7 +61,8 @@
 - `link` accepts any git URL or local path in addition to `owner/name`.
 - A forced pull, and the first pull onto a machine that already has files, copy
   the files they replace into `opencode-sync-recovery` under the data
-  directory first.
+  directory first. This covers new folders, non-ASCII file names, and local
+  skills and extra-path files that the forced pull removes or overwrites.
 
 ### Fixed
 - A push that loses a race with another machine rebases and retries up to three
@@ -70,6 +71,9 @@
 - The first push from a machine whose config directory is not yet a
   repository now writes the remote's skills out before staging, so it can no
   longer publish every skill it lacks as a deletion.
+- Git runs with `core.quotepath=off` and English messages, so non-ASCII file
+  names count toward the large-change guard and a lost push race is
+  recognised on a localized git.
 
 ### Contributors
 - @vitaly74 — OpenCode 2 plugin entrypoint (#6, 3.1.0)

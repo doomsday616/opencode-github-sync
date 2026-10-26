@@ -19,6 +19,7 @@ import path from "node:path";
 export const TASK_NAME = "opencode-github-sync";
 export const LAUNCHD_LABEL = "com.opencode-github-sync.autosync";
 export const SYSTEMD_UNIT = "opencode-github-sync";
+export const VBS_NAME = "opencode-sync-autosync.vbs";
 
 export interface ScheduleSpec {
   /** Absolute path of the Node binary. */
@@ -208,10 +209,8 @@ export function encodeVbs(text: string): Buffer {
   return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
 }
 
-/** UTF-16LE with BOM, as schtasks expects for an XML that declares UTF-16. */
-export function encodeTaskXml(text: string): Buffer {
-  return encodeVbs(text);
-}
+/** schtasks expects the same encoding for an XML that declares UTF-16. */
+export const encodeTaskXml = encodeVbs;
 
 // ── macOS ───────────────────────────────────────────────────────────────────
 
@@ -258,10 +257,17 @@ function toPosix(p: string): string {
 
 // ── Linux ───────────────────────────────────────────────────────────────────
 
-/** Quote one word for a systemd `ExecStart=` line; `%` is a specifier there. */
+/**
+ * Quote one word for a systemd `ExecStart=` / `Environment=` line. `%` is a
+ * specifier and `$` an environment expansion there, so both are doubled.
+ */
 export function systemdQuote(arg: string): string {
   if (/^[A-Za-z0-9_@+=:,./-]+$/.test(arg)) return arg;
-  return `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
+  return `"${arg
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/%/g, "%%")
+    .replace(/\$/g, "$$$$")}"`;
 }
 
 export function systemdService(spec: ScheduleSpec): string {
@@ -308,13 +314,19 @@ export function shQuote(arg: string): string {
 export const CRON_MARKER = "# opencode-github-sync autosync";
 
 export function crontabLine(spec: ScheduleSpec): string {
+  // The minute field cannot express more than 59; longer intervals become
+  // hourly steps (rounded down), which `*/N` would silently turn into hourly.
   const minutes = Math.max(2, Math.floor(spec.intervalMinutes));
+  const schedule =
+    minutes < 60 ? `*/${minutes} * * * *` : `0 */${Math.min(23, Math.floor(minutes / 60))} * * *`;
+  // cron turns an unescaped `%` into a newline.
+  const cronQuote = (v: string) => shQuote(v).replace(/%/g, "\\%");
   const env = Object.entries(spec.env ?? {})
-    .map(([k, v]) => `${k}=${shQuote(v)}`)
+    .map(([k, v]) => `${k}=${cronQuote(v)}`)
     .join(" ");
-  const cmd = [spec.node, ...runArgs(spec)].map(shQuote).join(" ");
-  const log = shQuote(path.posix.join(toPosix(spec.logDir), "autosync-cron.log"));
-  return `*/${minutes} * * * * ${env ? `${env} ` : ""}${cmd} >> ${log} 2>&1 ${CRON_MARKER}`;
+  const cmd = [spec.node, ...runArgs(spec)].map(cronQuote).join(" ");
+  const log = cronQuote(path.posix.join(toPosix(spec.logDir), "autosync-cron.log"));
+  return `${schedule} ${env ? `${env} ` : ""}${cmd} >> ${log} 2>&1 ${CRON_MARKER}`;
 }
 
 /** Replace (or remove, with `line` undefined) our entry in a crontab text. */
@@ -381,8 +393,12 @@ export interface InstallContext {
   spec: ScheduleSpec;
   home: string;
   runner: Runner;
-  /** Directory for generated launcher files (the config root). */
-  configRoot: string;
+  /**
+   * Directory for generated launcher files. Must be outside the sync
+   * worktree: a launcher there would be committed, overwritten by other
+   * machines and deleted by a forced pull's `git clean`.
+   */
+  launcherDir: string;
   runWhenLoggedOff: boolean;
   elevated: boolean;
 }
@@ -416,7 +432,7 @@ function windowsLauncher(ctx: InstallContext): WindowsLauncher {
   ) {
     return { kind: "conhost", conhost };
   }
-  const vbs = path.join(ctx.configRoot, "opencode-sync-autosync.vbs");
+  const vbs = path.join(ctx.launcherDir, VBS_NAME);
   fs.mkdirSync(path.dirname(vbs), { recursive: true });
   fs.writeFileSync(vbs, encodeVbs(windowsVbs(ctx.spec)));
   return { kind: "wscript", wscript: path.join(systemRoot, "System32", "wscript.exe"), vbs };
@@ -435,8 +451,14 @@ export function installScheduler(ctx: InstallContext): InstallResult {
   if (ctx.platform === "win32") {
     let logonType: WindowsTaskOptions["logonType"] = "InteractiveToken";
     if (ctx.runWhenLoggedOff) {
-      if (ctx.elevated) logonType = "S4U";
-      else warnings.push("not elevated: registered to run only while you are signed in");
+      if (ctx.elevated) {
+        logonType = "S4U";
+        // S4U has no network credentials and cannot unlock DPAPI, so Git
+        // Credential Manager cannot hand out a saved HTTPS login.
+        warnings.push(
+          "while signed out, saved HTTPS logins from Windows Credential Manager are unavailable; use an SSH remote for unattended runs",
+        );
+      } else warnings.push("not elevated: registered to run only while you are signed in");
     }
     const launcher = windowsLauncher(ctx);
     const xml = windowsTaskXml(ctx.spec, {
@@ -493,14 +515,16 @@ export function installScheduler(ctx: InstallContext): InstallResult {
     return { ok: true, kind: "launchd", detail: [plistPath], warnings };
   }
 
-  // Linux: systemd --user when it answers, otherwise cron.
+  // Linux: systemd --user when it answers, otherwise cron. Whichever is
+  // chosen, the other one is cleared, or switching would run the job twice.
   const probe = ctx.runner.run("systemctl", ["--user", "show-environment"]);
+  const unitDir = path.join(
+    process.env.XDG_CONFIG_HOME || path.join(ctx.home, ".config"),
+    "systemd",
+    "user",
+  );
   if (probe.ok) {
-    const dir = path.join(
-      process.env.XDG_CONFIG_HOME || path.join(ctx.home, ".config"),
-      "systemd",
-      "user",
-    );
+    const dir = unitDir;
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, `${SYSTEMD_UNIT}.service`), systemdService(ctx.spec));
     fs.writeFileSync(path.join(dir, `${SYSTEMD_UNIT}.timer`), systemdTimer(ctx.spec));
@@ -513,6 +537,10 @@ export function installScheduler(ctx: InstallContext): InstallResult {
     ]);
     if (!enabled.ok)
       return { ok: false, kind: "systemd", detail: [enabled.stderr.trim()], warnings };
+    const cron = ctx.runner.run("crontab", ["-l"]);
+    if (cron.ok && cron.stdout.includes(CRON_MARKER)) {
+      ctx.runner.run("crontab", ["-"], editCrontab(cron.stdout, undefined));
+    }
     warnings.push("headless host: run `loginctl enable-linger` so the timer runs while logged out");
     return { ok: true, kind: "systemd", detail: [dir], warnings };
   }
@@ -521,6 +549,9 @@ export function installScheduler(ctx: InstallContext): InstallResult {
   const next = editCrontab(current.ok ? current.stdout : "", crontabLine(ctx.spec));
   const written = ctx.runner.run("crontab", ["-"], next);
   if (!written.ok) return { ok: false, kind: "cron", detail: [written.stderr.trim()], warnings };
+  for (const unit of [`${SYSTEMD_UNIT}.timer`, `${SYSTEMD_UNIT}.service`]) {
+    fs.rmSync(path.join(unitDir, unit), { force: true });
+  }
   return { ok: true, kind: "cron", detail: ["crontab entry added"], warnings };
 }
 
@@ -562,14 +593,15 @@ export function schedulerStatus(
   return { installed: false, kind: "none" };
 }
 
-export function uninstallScheduler(ctx: InstallContext): { removed: boolean; detail: string[] } {
+export type UninstallContext = Pick<InstallContext, "platform" | "runner" | "home" | "launcherDir">;
+
+export function uninstallScheduler(ctx: UninstallContext): { removed: boolean; detail: string[] } {
   const detail: string[] = [];
   let removed = false;
   if (ctx.platform === "win32") {
     const del = ctx.runner.run("schtasks", ["/Delete", "/TN", TASK_NAME, "/F"]);
     removed = del.ok;
-    const vbs = path.join(ctx.configRoot, "opencode-sync-autosync.vbs");
-    if (fs.existsSync(vbs)) fs.rmSync(vbs, { force: true });
+    fs.rmSync(path.join(ctx.launcherDir, VBS_NAME), { force: true });
     return { removed, detail };
   }
   if (ctx.platform === "darwin") {

@@ -89,9 +89,10 @@ if ($Proxy) { $cliArgs += @('--proxy', $Proxy) }
 
 function ConvertTo-ArgumentString([string[]]$Items) {
   # Windows command-line quoting, so paths and URLs with spaces survive
-  # Start-Process in both PowerShell editions.
+  # Start-Process in both PowerShell editions. The target is a .cmd shim, so
+  # cmd.exe metacharacters (a proxy or repo URL with `&`) are quoted too.
   $quoted = foreach ($item in $Items) {
-    if ($item -notmatch '[\s"]' -and $item -ne '') { $item; continue }
+    if ($item -notmatch '[\s"&|<>^%]' -and $item -ne '') { $item; continue }
     $out = '"'
     $slashes = 0
     foreach ($ch in $item.ToCharArray()) {
@@ -116,10 +117,15 @@ if ($DryRun) {
 # --- Prerequisites ---
 
 function Update-SessionPath {
-  # A fresh winget install updates the registry, not this session.
-  $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-  $user = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+  # A fresh winget install updates the registry, not this session. New
+  # entries are prepended; session-only entries (nvm, fnm shims) are kept.
+  $current = @($env:Path -split ';' | Where-Object { $_ })
+  $registry = @(
+    [Environment]::GetEnvironmentVariable('Path', 'Machine'),
+    [Environment]::GetEnvironmentVariable('Path', 'User')
+  ) -join ';' -split ';' | Where-Object { $_ }
+  $missing = @($registry | Where-Object { $current -notcontains $_ })
+  $env:Path = (@($missing) + $current) -join ';'
 }
 
 function Test-Command([string]$Name) {

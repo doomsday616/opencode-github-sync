@@ -69,6 +69,10 @@ curl -fsSL https://raw.githubusercontent.com/doomsday616/opencode-github-sync/ma
 | `--lang en` / `zh-CN` | 界面语言 |
 | `--proxy 地址` | npm 和 git 用的代理，安装时和之后同步时都会用 |
 | `--yes` | 缺 Node.js 或 git 时不再询问，直接安装 |
+| `--package 包名` | 要安装的 npm 包（默认 `opencode-github-sync@latest`） |
+| `--dry-run` | 只打印要执行的步骤，什么都不改 |
+
+Windows 上参数名相同，前面换成一个短横线：`-Repo`、`-Interval`、`-Lang`、`-Proxy`、`-Yes`、`-Package`、`-DryRun`。
 
 如果仓库里已经有内容、本机也有自己的文件，设置时以仓库为准，被替换的本机文件会存进[恢复目录](#安全机制)。
 

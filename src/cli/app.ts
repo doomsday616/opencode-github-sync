@@ -69,6 +69,7 @@ const PASSTHROUGH_ENV = [
   "XDG_CACHE_HOME",
   "OPENCODE_SYNC_LANG",
   "OPENCODE_SYNC_HOST_ALIAS",
+  "OPENCODE_SYNC_PROXY",
 ];
 
 function gitDirectory(): string | undefined {
@@ -122,7 +123,8 @@ function installContext(roots: Roots, settings: Settings): InstallContext {
     spec: scheduleSpec(roots, settings),
     home: os.homedir(),
     runner: realRunner,
-    configRoot: roots.config,
+    // The data root is never mirrored as a whole, so the launcher stays local.
+    launcherDir: roots.data,
     runWhenLoggedOff: settings.autosync.runWhenLoggedOff,
     elevated: isElevated(),
   };
@@ -130,10 +132,14 @@ function installContext(roots: Roots, settings: Settings): InstallContext {
 
 export const realScheduler: SchedulerApi = {
   install: (roots, settings) => installScheduler(installContext(roots, settings)),
+  // Needs no settings, so a corrupt settings file cannot block removal.
   uninstall: (roots) =>
-    uninstallScheduler(
-      installContext(roots, safeLoadSettings(roots) ?? loadSettings(roots.config)),
-    ),
+    uninstallScheduler({
+      platform: process.platform as Platform,
+      runner: realRunner,
+      home: os.homedir(),
+      launcherDir: roots.data,
+    }),
   status: () =>
     schedulerStatus({
       platform: process.platform as Platform,

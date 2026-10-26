@@ -76,6 +76,11 @@ curl -fsSL https://raw.githubusercontent.com/doomsday616/opencode-github-sync/ma
 | `--lang en` / `zh-CN` | Interface language |
 | `--proxy URL` | Proxy for npm and git, during install and for later syncs |
 | `--yes` | Install missing Node.js or git without asking |
+| `--package SPEC` | npm package spec to install (default `opencode-github-sync@latest`) |
+| `--dry-run` | Print what would run, change nothing |
+
+On Windows each option is the same word with a leading dash: `-Repo`,
+`-Interval`, `-Lang`, `-Proxy`, `-Yes`, `-Package`, `-DryRun`.
 
 When the repository already has content and this machine also has its own
 files, setup takes the repository's version and keeps the replaced files in a

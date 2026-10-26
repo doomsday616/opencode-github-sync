@@ -22,7 +22,18 @@ const NO_PROMPT_ENV = {
   GIT_TERMINAL_PROMPT: "0",
   GIT_ASKPASS: "",
   GCM_INTERACTIVE: "never",
+  // Failures are classified by matching git's English messages; a localized
+  // git would make a lost push race look like a hard failure.
+  LC_ALL: "C",
+  LANGUAGE: "C",
 };
+
+/**
+ * Paths are parsed from git's output and then opened on disk. With the
+ * default `core.quotepath`, a non-ASCII name such as `技能.md` comes back as
+ * an octal-escaped string that names no real file.
+ */
+const BASE_ARGS = ["-c", "core.quotepath=off"];
 
 /**
  * Run git and never throw.
@@ -34,7 +45,7 @@ const NO_PROMPT_ENV = {
  */
 export function git(args: string[], options: GitOptions): GitResult {
   try {
-    const stdout = execFileSync("git", args, {
+    const stdout = execFileSync("git", [...BASE_ARGS, ...args], {
       cwd: options.cwd,
       encoding: "utf8",
       stdio: "pipe",
@@ -55,7 +66,7 @@ export function git(args: string[], options: GitOptions): GitResult {
 
 export async function gitAsync(args: string[], options: GitOptions): Promise<GitResult> {
   try {
-    const { stdout, stderr } = await execFileAsync("git", args, {
+    const { stdout, stderr } = await execFileAsync("git", [...BASE_ARGS, ...args], {
       cwd: options.cwd,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
@@ -160,6 +171,31 @@ export function parsePorcelainPaths(output: string): string[] {
     const raw = arrow === -1 ? withoutStatus : withoutStatus.slice(arrow + 4);
     const unquoted = raw.trim().replace(/^"(.*)"$/, "$1");
     if (unquoted) paths.push(unquoted);
+  }
+  return paths;
+}
+
+/**
+ * Parse `git status -z --porcelain`: `XY path` records separated by NUL, with
+ * a rename's original path in the following record. Every path is returned,
+ * the original of a rename included, since both are local bytes.
+ */
+export function parsePorcelainZ(output: string): string[] {
+  const records = String(output ?? "").split("\0");
+  const paths: string[] = [];
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i] ?? "";
+    if (record.length < 3) continue;
+    // Each record is `XY path`, so the third character is always a space.
+    // `git()` trims its output, which drops the leading space of a first
+    // record such as ` M file`; that shows as a non-space third character.
+    const start = record[2] === " " ? 3 : record[1] === " " ? 2 : -1;
+    if (start === -1) continue;
+    paths.push(record.slice(start));
+    if (/^[RC]/.test(record)) {
+      const original = records[++i];
+      if (original) paths.push(original);
+    }
   }
   return paths;
 }
