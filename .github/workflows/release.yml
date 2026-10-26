@@ -28,13 +28,11 @@ jobs:
       - run: npm run build
 
       # The release body is bilingual: this version's section from CHANGELOG.md
-      # and CHANGELOG.zh-CN.md, the install line, and every contributor whose
-      # commits are in the range since the previous tag. GitHub's generated
-      # notes (PR list, compare link) are appended by the release step. This
-      # runs before publishing so a missing section stops the release before npm.
+      # and CHANGELOG.zh-CN.md, the install line, and the curated contributor
+      # list. GitHub's generated notes (PR list, compare link) are appended by
+      # the release step. This runs before publishing so a missing section
+      # stops the release before npm.
       - name: Build release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p "require('./package.json').version")
           section() {
@@ -52,14 +50,14 @@ jobs:
             fi
           done
 
-          git fetch --tags --force --quiet
-          prev=$(git tag --list 'v*' --sort=v:refname | awk -v cur="v${version}" '$0 == cur { print last; exit } { last = $0 }')
-          contributors=""
-          if [ -n "$prev" ]; then
-            contributors=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${prev}...v${version}" \
-              --jq '[.commits[] | select(.author.login != null) | .author.login]
-                    | unique | map(select(endswith("[bot]") | not)) | map("@" + .) | join(", ")')
-          fi
+          # Contributors are curated in the CHANGELOG's "### Contributors" block,
+          # not derived from commit authors: that would list the maintainer and
+          # miss people who reported or diagnosed a bug without committing. The
+          # block appears once, in English, at the end of the release body.
+          awk '/^### Contributors/ { c = 1; next } /^### / { c = 0 } c' en.md > contributors.md
+          for f in en.md zh.md; do
+            awk '/^### Contributors/ { c = 1; next } /^### / { c = 0 } !c' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
 
           {
             echo "## English"
@@ -68,17 +66,19 @@ jobs:
             echo "## 简体中文"
             cat zh.md
             echo ""
-            echo "## Install / 安装与升级"
+            echo "## Install"
             echo '```bash'
             echo "npm install -g opencode-github-sync@${version}"
             echo '```'
             echo ""
             echo "Plugin users: OpenCode picks up the new version on its next start."
-            echo "插件用户：OpenCode 下次启动时会自动使用新版本。"
-            if [ -n "$contributors" ]; then
+            if grep -q '[^[:space:]]' contributors.md; then
               echo ""
-              echo "## Contributors / 贡献者"
-              echo "$contributors"
+              echo "## Contributors"
+              echo ""
+              echo "Thank you to everyone who made this release possible:"
+              echo ""
+              grep '[^[:space:]]' contributors.md
             fi
           } > RELEASE_NOTES.md
           cat RELEASE_NOTES.md

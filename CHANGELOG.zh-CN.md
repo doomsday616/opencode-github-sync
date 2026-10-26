@@ -21,14 +21,19 @@
   - OpenCode 1.0–1.3.3 会把每个导出都当函数调用，新的对象形式默认导出满足不了，这些版本请继续使用 3.0.1。
 
 ### 修复
-- 导入会话不再连带删除其他会话。`INSERT OR REPLACE` 会先删掉冲突的行再插入，替换共享的 project 行时会通过 `ON DELETE CASCADE` 把之前导入的会话全部删掉。现在改用真正的 `INSERT ... ON CONFLICT DO UPDATE`，从不删除行，并且按行保留 `time_updated` 较新的一方（#2）。
-- 合成的 `global` 项目属于每台机器自己，不再导出；导入带有它的旧分片时，也不会覆盖本机的那一行（#4）。
-- 会话分片导出现在是确定的：没有变化的会话生成的分片逐字节相同，不会在每次推送时都显示为改动。感谢 @aquelejota（#5、#3）。
-- 会话测试现在真的会在 vitest 下运行。以前 `node:sqlite` 在那里加载失败，每个会话测试都提前返回。
-- 清理插件缓存时同时读取 `plugin` 和 `plugins` 两个键，并识别 `[spec, options]` 元组和 `{ package }` 对象，无论用哪种写法列出的插件都不会再被误删缓存。
+- 导入会话不再连带删除其他会话。`INSERT OR REPLACE` 会先删掉冲突的行再插入，替换共享的 project 行时会通过 `ON DELETE CASCADE` 把之前导入的会话全部删掉。现在改用真正的 `INSERT ... ON CONFLICT DO UPDATE`，从不删除行，并且按行保留 `time_updated` 较新的一方。由 @logser13 报告并附上验证过的修法，@aquelejota 补充了连带删除的分析（#2）。
+- 合成的 `global` 项目属于每台机器自己，不再导出；导入带有它的旧分片时，也不会覆盖本机的那一行。由 @logser13 报告，@aquelejota 确认（#4）。
+- 会话分片导出现在是确定的：没有变化的会话生成的分片逐字节相同，不会在每次推送时都显示为改动。由 @logser13 报告（#3），@aquelejota 修复（#5）。
+- 会话测试现在真的会在 vitest 下运行。以前 `node:sqlite` 在那里加载失败，每个会话测试都提前返回。由 @aquelejota 发现并修复（#5）。
+- 清理插件缓存时同时读取 `plugin` 和 `plugins` 两个键，并识别 `[spec, options]` 元组和 `{ package }` 对象，无论用哪种写法列出的插件都不会再被误删缓存。这是对 @vitaly74 #6 的补充修改。
 
 ### 变更
 - OpenCode 1.x 的最低支持版本变为 1.3.4。OpenCode 1.0–1.3.3 无法加载此版本，请继续使用 3.0.1。
+
+### Contributors
+- @vitaly74 — OpenCode 2 plugin entrypoint (#6)
+- @aquelejota — deterministic shard export and working session tests (#5), analysis of #2, #3 and #4
+- @logser13 — reported #2, #3 and #4 with reproductions and tested fixes
 
 ## 3.0.1
 
