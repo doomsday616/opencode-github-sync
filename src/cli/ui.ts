@@ -136,6 +136,17 @@ export class Ui {
     this.queue.pause();
   }
 
+  /**
+   * Read one line in line mode. A terminal echoes what was typed; a pipe does
+   * not, so the answer is echoed here to keep transcripts readable.
+   */
+  private async readLine(): Promise<string | undefined> {
+    const answer = await this.queue.line();
+    const echoed = Boolean((this.io.input as { isTTY?: boolean }).isTTY);
+    if (!echoed) this.io.output.write(`${answer ?? ""}\n`);
+    return answer;
+  }
+
   private clearRendered(): void {
     if (this.renderedLines > 0) {
       this.io.output.write(`\x1b[${this.renderedLines}A\x1b[0J`);
@@ -156,7 +167,7 @@ export class Ui {
     const keyOf = (c: Choice<T>, i: number) => (c.key ?? String(i + 1)).toLowerCase();
 
     if (!this.io.interactive) {
-      this.write(title ? `  ${paint(title, style.bold, style.text)}` : "");
+      if (title) this.write(`  ${paint(title, style.bold, style.text)}`);
       choices.forEach((c, i) => {
         const tag = `[${keyOf(c, i)}]`.padEnd(5);
         const line = `    ${paint(tag, style.cyan)}${c.label}${c.hint ? paint(`  ${c.hint}`, style.faint) : ""}`;
@@ -164,11 +175,8 @@ export class Ui {
       });
       for (;;) {
         this.io.output.write(`  ${paint("›", style.brand)} `);
-        const answer = await this.queue.line();
-        if (answer === undefined) {
-          this.write();
-          return undefined;
-        }
+        const answer = await this.readLine();
+        if (answer === undefined) return undefined;
         const text = answer.trim().toLowerCase();
         if (text === "") continue;
         const index = choices.findIndex((c, i) => !c.disabled && keyOf(c, i) === text);
@@ -258,7 +266,7 @@ export class Ui {
         });
         if (footer) this.write(`  ${paint(footer, style.faint)}`);
         this.io.output.write(`  ${paint("›", style.brand)} `);
-        const answer = await this.queue.line();
+        const answer = await this.readLine();
         if (answer === undefined) return undefined;
         const text = answer.trim().toLowerCase();
         if (text === "" || text === "s") return current;
@@ -325,11 +333,8 @@ export class Ui {
     const suffix = initial ? paint(` (${initial})`, style.faint) : "";
     if (!this.io.interactive) {
       this.io.output.write(`  ${question}${suffix} ${paint("›", style.brand)} `);
-      const answer = await this.queue.line();
-      if (answer === undefined) {
-        this.write();
-        return undefined;
-      }
+      const answer = await this.readLine();
+      if (answer === undefined) return undefined;
       return answer.trim() === "" ? initial : answer.trim();
     }
 

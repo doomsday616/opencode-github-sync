@@ -258,9 +258,9 @@ function toPosix(p: string): string {
 
 // ── Linux ───────────────────────────────────────────────────────────────────
 
-/** Quote one word for a systemd `ExecStart=` line. */
+/** Quote one word for a systemd `ExecStart=` line; `%` is a specifier there. */
 export function systemdQuote(arg: string): string {
-  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(arg)) return arg;
+  if (/^[A-Za-z0-9_@+=:,./-]+$/.test(arg)) return arg;
   return `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
 }
 

@@ -82,6 +82,8 @@ export interface MenuDeps {
   now?: () => number;
   /** Directory the support bundle is written to. */
   cwd?: string;
+  /** Lists candidate repositories; defaults to the GitHub CLI. */
+  discover?: () => string[];
 }
 
 interface Ctx {
@@ -92,6 +94,7 @@ interface Ctx {
   openEditor: (file: string) => boolean;
   now: () => number;
   cwd: string;
+  discover: () => string[];
 }
 
 type Next = "stay" | "exit";
@@ -107,6 +110,7 @@ export async function runMenu(deps: MenuDeps): Promise<void> {
     openEditor: deps.openEditor ?? defaultEditor,
     now: deps.now ?? Date.now,
     cwd: deps.cwd ?? process.cwd(),
+    discover: deps.discover ?? defaultDiscover,
   };
 
   if (!repoUrl(settings(ctx))) {
@@ -292,7 +296,7 @@ async function linkFlow(ctx: Ctx): Promise<boolean> {
   }
 
   let target: string | undefined;
-  const found = ghAvailable() ? safe(() => discoverSyncRepos(), [] as string[]) : [];
+  const found = safe(() => ctx.discover(), [] as string[]);
   if (found.length > 0) {
     const choices: Choice<string>[] = found.slice(0, 9).map((r, i) => ({
       value: r,
@@ -324,6 +328,10 @@ function safe<T>(fn: () => T, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function defaultDiscover(): string[] {
+  return ghAvailable() ? discoverSyncRepos() : [];
 }
 
 /**
@@ -1221,6 +1229,7 @@ export async function runSetup(
     openEditor: defaultEditor,
     now: Date.now,
     cwd: process.cwd(),
+    discover: () => [],
   };
   banner();
   // Local-only preferences go into the settings file once it exists (after

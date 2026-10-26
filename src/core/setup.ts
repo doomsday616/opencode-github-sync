@@ -51,6 +51,8 @@ function gh(args: string[]): { ok: boolean; stdout: string; stderr: string } {
 }
 
 export function ghAvailable(): boolean {
+  // Lets tests and CI run without touching whatever account `gh` is signed in to.
+  if (process.env.OPENCODE_SYNC_NO_GH === "1") return false;
   return gh(["--version"]).ok;
 }
 

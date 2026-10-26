@@ -24,6 +24,7 @@ import { type Roots, getDatabasePath, getRoots } from "./paths.js";
 import { saveToRecovery } from "./recovery.js";
 import {
   LOCAL_RUNTIME_PATHS,
+  type RepoState,
   assertPushLanded,
   assertRemoteReachable,
   ensureRepo,
@@ -166,13 +167,15 @@ export async function push(options: SyncOptions = {}): Promise<SyncResult> {
 
   if (!fs.existsSync(root)) throw new SyncError(`Config directory not found: ${root}`);
 
-  ensureRepo({
-    root,
-    remote: ctx.remote,
-    branch,
-    adopt: options.adopt ?? "remote",
-    beforeAdopt: (_root, ref) => saveOverwritten(ctx, ref, "first-push"),
-  });
+  const state = adoptRepo(ctx, options.adopt ?? "remote", "first-push");
+  if (state === "adopted" && (options.adopt ?? "remote") === "remote" && !ctx.dryRun) {
+    // The remote's files are now in the worktree, but the untracked trees
+    // (skills, state, extra paths) still hold this machine's old contents.
+    // Write the remote's versions out first; staging the stale trees in would
+    // otherwise publish every skill this machine lacks as a deletion.
+    stageOut(createStageContext(root, ctx.settings, reporter, false, ctx.roots));
+    writeStageOutMark(root);
+  }
   assertRemoteReachable(root, branch, "Push", true);
   writeRepoMetadata(root);
   writeLocalExcludes(root, ctx.settings.guard?.skipDirs ?? []);
@@ -453,13 +456,7 @@ export async function pull(options: SyncOptions = {}): Promise<SyncResult> {
   fs.mkdirSync(root, { recursive: true });
 
   if (!isGitRepo(root)) {
-    const state = ensureRepo({
-      root,
-      remote: ctx.remote,
-      branch,
-      adopt: "remote",
-      beforeAdopt: (_root, ref) => saveOverwritten(ctx, ref, "first-pull"),
-    });
+    const state = adoptRepo(ctx, "remote", "first-pull");
     if (state === "fresh") {
       return done(
         "pull",
@@ -792,6 +789,31 @@ function countRealChanges(root: string, porcelain: string): number {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Make the config directory a working copy of the remote.
+ *
+ * When the remote already has history and `mode` is `remote`, the files it
+ * is about to overwrite are copied to recovery first, and files in disabled
+ * categories are set aside and put back, so they stay this machine's own.
+ */
+function adoptRepo(ctx: Context, mode: "remote" | "local", label: string): RepoState {
+  let aside: CategorySnapshot | null = null;
+  try {
+    return ensureRepo({
+      root: ctx.root,
+      remote: ctx.remote,
+      branch: ctx.branch,
+      adopt: mode,
+      beforeAdopt: (_root, ref) => {
+        saveOverwritten(ctx, ref, label);
+        aside = snapshotDisabled(ctx.root, ctx.disabled);
+      },
+    });
+  } finally {
+    restoreDisabled(ctx.root, ctx.disabled, aside);
+  }
+}
 
 /**
  * Copy every local file that a move to `ref` would overwrite or delete into
