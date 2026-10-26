@@ -10,7 +10,7 @@
 - **英文和简体中文界面**，覆盖所有菜单和命令输出。语言按 `OPENCODE_SYNC_LANG`、`LC_ALL`/`LC_MESSAGES`/`LANG`、系统区域设置依次判断，也可以用 `--lang` 或在菜单里切换。
 - **由操作系统驱动的自动同步。** 新增 `opencode-sync autosync install|uninstall|enable|disable|status|run|reset|pause|resume`。Windows 用任务计划程序（登录、解锁、远程连接时触发，外加定时重复；通过 `conhost --headless` 或 UTF-16 编码的 VBScript 隐藏窗口），macOS 用 launchd，Linux 用 systemd 用户定时器，不可用时退回 crontab。每次运行只在同步目录安静一段时间后才推送；还有文件在变化时，只有本机没有待处理的改动才会接收。多台机器会错开时间避免撞车；连续失败后退避间隔从 30 分钟加到 60 分钟，但永不放弃；推送被别的机器抢先不算失败，会自动重试；桌面通知只在开始退避和恢复正常时各弹一次。
 - **同步内容勾选**：主配置、指令文件、智能体、自定义命令、插件、技能、登录凭据、会话。关掉的类别双向都只留在本机。
-- **大改动保护。** 一次推送新增超过 300 个文件、总量超过 10 MB，或有单个文件超过 2 MB 时，要先确认（阈值可调）。自动同步从不自动确认，只记一次失败并发通知。`node_modules`、`.venv`、`venv`、`__pycache__`、`dist`、`.cache` 这类生成目录永远不会提交。
+- **大改动保护。** 一次推送新增超过 300 个文件、总量超过 10 MB，或有单个文件超过 2 MB 时，要先确认（阈值可调）。自动同步从不自动确认，只记一次失败并发通知。往空仓库的第一次推送本来就要带上全部现有配置，所以只检查单个文件大小。`node_modules`、`.venv`、`venv`、`__pycache__`、`dist`、`.cache` 这类生成目录永远不会提交。
 - **从历史版本恢复单个文件**，被替换的版本保存在恢复目录里。
 - **设备列表**，根据提交历史显示每台机器上次同步的时间，并可以给本机改名。
 - **网络代理**，只作用于 opencode-sync 启动的 git、gh 和 npm。
@@ -25,8 +25,13 @@
 - 强制拉取，以及本机已有文件时的第一次拉取，会先把将被替换的文件复制到数据目录下的 `opencode-sync-recovery`。
 
 ### 修复
-- 推送时被别的机器抢先，会自动变基并最多重试三次，而不是直接失败。
+- 推送时被别的机器抢先，会自动变基并最多重试三次，而不是直接失败。分支受保护或被钩子拒绝时会如实报错，不会反复重试。
 - 配置目录还不是仓库的机器第一次推送时，会先把仓库里的技能写回本机再打包，不会再把本机缺少的技能当成删除推送出去。
+
+### Contributors
+- @vitaly74 — OpenCode 2 plugin entrypoint (#6, 3.1.0)
+- @aquelejota — deterministic shard export and working session tests (#5), analysis of #2, #3 and #4 (3.1.0)
+- @logser13 — reported #2, #3 and #4 with reproductions and tested fixes (3.1.x)
 
 ## 3.1.1
 

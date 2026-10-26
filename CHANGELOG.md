@@ -41,6 +41,8 @@
 - **Large-change guard.** A push that adds more than 300 files, more than
   10 MB, or any file over 2 MB waits for confirmation (thresholds are
   adjustable). Autosync never confirms: it records a failure and notifies.
+  The first push into an empty repository carries the whole existing setup,
+  so only the single-file limit applies there.
   Generated directories (`node_modules`, `.venv`, `venv`, `__pycache__`,
   `dist`, `.cache`) are never staged.
 - **Restore a file from history**, with the replaced version kept in the
@@ -63,10 +65,16 @@
 
 ### Fixed
 - A push that loses a race with another machine rebases and retries up to three
-  times instead of failing.
+  times instead of failing. A protected branch or a declined hook is reported
+  as a failure rather than retried.
 - The first push from a machine whose config directory is not yet a
   repository now writes the remote's skills out before staging, so it can no
   longer publish every skill it lacks as a deletion.
+
+### Contributors
+- @vitaly74 — OpenCode 2 plugin entrypoint (#6, 3.1.0)
+- @aquelejota — deterministic shard export and working session tests (#5), analysis of #2, #3 and #4 (3.1.0)
+- @logser13 — reported #2, #3 and #4 with reproductions and tested fixes (3.1.x)
 
 ## 3.1.1
 
