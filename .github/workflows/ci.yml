@@ -49,6 +49,147 @@ jobs:
 
       - run: npm run build
 
+  installer:
+    # The only place a real scheduled job is ever registered: disposable
+    # runners. Installs the packed checkout through the real installer, links
+    # a local bare repository with every root redirected into the runner's
+    # temp directory, then installs, runs and removes the scheduler entry.
+    name: installer · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      OPENCODE_SYNC_NO_GH: "1"
+      OPENCODE_SYNC_NO_STAGGER: "1"
+      OPENCODE_SYNC_LANG: en
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+
+      - name: Build and pack the checkout
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+          npm pack
+          echo "PKG=$(pwd)/$(ls opencode-github-sync-*.tgz)" >> "$GITHUB_ENV"
+
+      - name: Isolated roots and a local bare repository
+        shell: bash
+        run: |
+          base="$RUNNER_TEMP/ogs"
+          mkdir -p "$base/home" "$base/config"
+          git init -q --bare -b main "$base/remote.git"
+          printf '{ "model": "ci" }\n' > "$base/config/opencode.jsonc"
+          {
+            echo "SYNC_CONFIG_ROOT=$base/config"
+            echo "SYNC_DATA_ROOT=$base/data"
+            echo "SYNC_STATE_ROOT=$base/state"
+            echo "SYNC_AGENTS_ROOT=$base/agents/skills"
+            echo "SYNC_CACHE_ROOT=$base/cache"
+            echo "SYNC_HOME=$base/home"
+            echo "OGS_REMOTE=$base/remote.git"
+            echo "OGS_LOG=$base/config/logs/opencode-sync-autosync.log"
+          } >> "$GITHUB_ENV"
+
+      - name: Run install.sh non-interactively
+        if: runner.os != 'Windows'
+        shell: bash
+        run: sh install.sh --mode link --repo "$OGS_REMOTE" --interval 5 --lang en --package "$PKG" --yes </dev/null
+
+      - name: install.ps1 parses and plans under Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./install.ps1 -DryRun -Mode auto -Repo o/r
+
+      - name: Run install.ps1 non-interactively
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./install.ps1 -Mode link -Repo $env:OGS_REMOTE -Interval 5 -Lang en -Package $env:PKG -Yes
+
+      - name: The first sync landed in the bare repository
+        shell: bash
+        run: git --git-dir="$OGS_REMOTE" log --oneline -1 | grep -q sync
+
+      - name: autosync enable registers the scheduler entry
+        shell: bash
+        run: |
+          opencode-sync autosync enable
+          opencode-sync autosync status
+          case "$RUNNER_OS" in
+            Windows) schtasks //Query //TN opencode-github-sync ;;
+            macOS) test -f "$HOME/Library/LaunchAgents/com.opencode-github-sync.autosync.plist"
+                   launchctl list | grep -q com.opencode-github-sync.autosync ;;
+            Linux) systemctl --user is-enabled opencode-github-sync.timer 2>/dev/null \
+                     || crontab -l | grep -q "opencode-github-sync autosync" ;;
+          esac
+
+      - name: The scheduler actually starts the job
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then schtasks //Run //TN opencode-github-sync; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            if systemctl --user is-enabled opencode-github-sync.timer >/dev/null 2>&1; then
+              systemctl --user start opencode-github-sync.service || true
+            else
+              echo "cron fallback: not waiting for the next minute boundary"; exit 0
+            fi
+          fi
+          for _ in $(seq 1 45); do
+            if grep -q "scheduled:" "$OGS_LOG" 2>/dev/null; then cat "$OGS_LOG"; exit 0; fi
+            sleep 2
+          done
+          echo "the scheduled job did not write to $OGS_LOG"
+          cat "$OGS_LOG" 2>/dev/null || true
+          cat "$SYNC_CONFIG_ROOT/logs/autosync-launchd.log" 2>/dev/null || true
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # An InteractiveToken task needs a signed-in desktop session, which
+            # a hosted runner may not provide. Report what Task Scheduler saw.
+            powershell -NoProfile -Command "Get-ScheduledTaskInfo -TaskName opencode-github-sync | Format-List"
+            echo "::warning::Task Scheduler did not start the job in this runner session"
+            exit 0
+          fi
+          exit 1
+
+      - name: autosync run
+        shell: bash
+        run: |
+          opencode-sync autosync run --trigger ci
+          grep "ci:" "$OGS_LOG"
+
+      - name: autosync uninstall removes the scheduler entry
+        shell: bash
+        run: |
+          opencode-sync autosync uninstall
+          case "$RUNNER_OS" in
+            Windows) ! schtasks //Query //TN opencode-github-sync >/dev/null 2>&1 ;;
+            macOS) test ! -f "$HOME/Library/LaunchAgents/com.opencode-github-sync.autosync.plist"
+                   ! launchctl list | grep -q com.opencode-github-sync.autosync ;;
+            Linux) ! systemctl --user is-enabled opencode-github-sync.timer >/dev/null 2>&1
+                   ! crontab -l 2>/dev/null | grep -q "opencode-github-sync autosync" ;;
+          esac
+
+  shellcheck:
+    name: shellcheck install.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -s sh install.sh
+
   package:
     name: package contents
     runs-on: ubuntu-latest
@@ -68,3 +209,6 @@ jobs:
           test -f dist/plugin/index.js
           test -f dist/cli/index.js
           test -f dist/core/index.js
+          # Installers and README images are served from GitHub, not npm.
+          files=$(npm pack --dry-run --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s)[0].files.map(f=>f.path).join("\n")))')
+          ! echo "$files" | grep -E '^(install\.(sh|ps1)|docs/)'

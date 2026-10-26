@@ -152,7 +152,7 @@ function Get-NodeVersion {
 }
 
 $nodeVersion = Get-NodeVersion
-if (-not $nodeVersion -or -not (Test-Command 'npm')) {
+if (-not $nodeVersion -or -not (Test-Command 'npm.cmd')) {
   Request-Install 'Node.js' 'OpenJS.NodeJS.LTS' 'Node.js (18 or newer) and npm are needed and were not found.' 'https://nodejs.org'
   $nodeVersion = Get-NodeVersion
 }
@@ -172,10 +172,12 @@ if (-not (Test-Command 'git')) {
 # --- Install ---
 
 Write-Step "Installing $Package ..."
-& npm install -g $Package
+# npm.cmd, not npm: plain `npm` resolves to npm.ps1, which a Restricted
+# execution policy blocks even though this script itself runs fine via iex.
+& npm.cmd install -g $Package
 if ($LASTEXITCODE -ne 0) { Stop-Install 'npm install -g failed.' }
 
-$prefix = (& npm prefix -g).Trim()
+$prefix = (& npm.cmd prefix -g).Trim()
 $bin = Join-Path $prefix 'opencode-sync.cmd'
 if (-not (Test-Path -LiteralPath $bin)) {
   $found = Get-Command 'opencode-sync.cmd' -ErrorAction SilentlyContinue
