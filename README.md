@@ -86,7 +86,7 @@ files, setup takes the repository's version and keeps the replaced files in a
 ## Pick your setup
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/en/03-setup-choice.png" alt="Command only, or primary device with autosync" width="760">
+  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/en/03-pick-your-setup.png" alt="Command only, or primary device with autosync" width="760">
 </p>
 
 The first time you run `opencode-sync` it asks how this machine should work.
@@ -166,7 +166,7 @@ and overrides files.
 ## How autosync works
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/en/04-autosync-timeline.png" alt="Machines sync on a staggered schedule, wait while busy, and back off on errors" width="760">
+  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/en/04-autosync.png" alt="Each machine syncs on its own schedule, waits while you edit, and backs off on errors" width="760">
 </p>
 
 When autosync is on, the operating system starts `opencode-sync autosync run`
@@ -274,7 +274,7 @@ Session sync needs Node.js 22.5 or newer.
 ## Safety features
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/en/05-safety-net.png" alt="Lock, atomic replace, recovery folder and large-change guard" width="760">
+  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/en/05-safety-net.png" alt="One sync at a time, all-or-nothing writes, restore earlier versions, large-change guard" width="760">
 </p>
 
 - **Atomic replace.** Files are written beside their target and then swapped

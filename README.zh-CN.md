@@ -77,7 +77,7 @@ curl -fsSL https://raw.githubusercontent.com/doomsday616/opencode-github-sync/ma
 ## 选择使用方式
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/zh-CN/03-setup-choice.png" alt="只装命令，或者主力设备加自动同步" width="760">
+  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/zh-CN/03-pick-your-setup.png" alt="只装命令，或者设为自动同步的主力设备" width="760">
 </p>
 
 第一次运行 `opencode-sync` 时，它会问你这台电脑打算怎么用。
@@ -148,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/doomsday616/opencode-github-sync/ma
 ## 自动同步是怎么工作的
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/zh-CN/04-autosync-timeline.png" alt="多台电脑错峰同步，忙碌时等待，出错时退避" width="760">
+  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/zh-CN/04-autosync.png" alt="每台电脑各自定时同步，你在编辑时会等一等，出错了过一会儿再试" width="760">
 </p>
 
 开启后，操作系统每隔几分钟、以及登录时（Windows 上还包括解锁和远程桌面重连时）运行一次 `opencode-sync autosync run`。每次只做一个判断：
@@ -223,7 +223,7 @@ opencode-sync sessions exclude ses_0ba19b4e7ffeMbSmWYi3Nj6xfZ  # 这个会话永
 ## 安全机制
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/zh-CN/05-safety-net.png" alt="同步锁、原子替换、恢复目录、大改动保护" width="760">
+  <img src="https://raw.githubusercontent.com/doomsday616/opencode-github-sync/main/docs/images/zh-CN/05-safety-net.png" alt="同一时间只同步一次、写入要么全成功要么不动、可找回之前的版本、大改动先拦下" width="760">
 </p>
 
 - **原子替换。** 文件先写在目标旁边，再一次性换过去。同步到一半崩溃，也不会留下写了一半、导致 OpenCode 启动不了的配置。
