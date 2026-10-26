@@ -27,6 +27,32 @@ jobs:
       - run: npm run check
       - run: npm run build
 
+      # The release body is this version's CHANGELOG section, followed by the
+      # install line and GitHub's generated notes (PR list, new contributors,
+      # compare link). Generated notes alone are only a compare link whenever
+      # the release has no merged PRs, which tells a reader nothing. This runs
+      # before publishing so a missing section stops the release before npm.
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          version=$(node -p "require('./package.json').version")
+          awk -v v="$version" '
+            /^## / { if (found) exit; if ($2 == v) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if ! grep -q '[^[:space:]]' RELEASE_NOTES.md; then
+            echo "::error::CHANGELOG.md has no '## ${version}' section."
+            exit 1
+          fi
+          {
+            echo ""
+            echo "### Install / upgrade"
+            echo '```bash'
+            echo "npm install -g opencode-github-sync@${version}"
+            echo '```'
+            echo ""
+            echo "Plugin users: OpenCode picks up the new version on its next start."
+          } >> RELEASE_NOTES.md
+
       # A re-run of a release, or a tag pushed after publishing by hand, must not
       # fail the whole workflow. npm rejects republishing a version, so check
       # first and let the GitHub release step still run.
@@ -58,4 +84,5 @@ jobs:
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
