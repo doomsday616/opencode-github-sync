@@ -2,6 +2,72 @@
 
 [简体中文](./CHANGELOG.zh-CN.md)
 
+## 3.2.0
+
+### Added
+- **One-line installers.** `install.ps1` (Windows PowerShell 5.1 and
+  PowerShell 7) and `install.sh` (macOS, Linux) check for Node.js 18+ and git,
+  offer to install a missing one through winget, Homebrew or the system
+  package manager (they ask first and never install silently), run
+  `npm install -g opencode-github-sync@latest`, and open the menu. `--mode`,
+  `--repo`, `--interval`, `--lang`, `--proxy` and `--yes` run the whole setup
+  non-interactively. Under `curl | sh` questions are read from the terminal,
+  and on Windows the menu runs as its own process so it gets the keyboard.
+- **Interactive menu.** `opencode-sync` with no arguments (or `opencode-sync
+  menu`) opens a menu with arrow keys, hotkeys and checkboxes, and falls back
+  to numbered prompts whenever input is not a terminal. Every existing
+  subcommand still works and stays scriptable. First run offers: install the
+  command only, link a repository, or link and make this the primary device
+  with autosync. When the machine and the repository differ, it shows the
+  differences and lets you pick a side; the losing side's files go to a
+  recovery folder.
+- **English and Simplified Chinese** for every menu and command string,
+  detected from `OPENCODE_SYNC_LANG`, `LC_ALL`/`LC_MESSAGES`/`LANG` or the
+  system locale, and switchable with `--lang` or from the menu.
+- **Autosync driven by the operating system.** `opencode-sync autosync
+  install|uninstall|enable|disable|status|run|reset|pause|resume`. Task
+  Scheduler on Windows (logon, unlock, remote connect and a repeating timer;
+  hidden through `conhost --headless` or a UTF-16 VBScript launcher), launchd
+  on macOS, a systemd user timer on Linux with a crontab fallback. Each run
+  pushes only when the synced trees have been quiet for a settle period, and
+  otherwise receives only when this machine has nothing of its own in flight.
+  Machines are staggered so they do not collide, failures back off from 30 to
+  60 minutes without ever giving up, a lost push race is retried rather than
+  counted, and a desktop notification appears only when backing off starts
+  and when it recovers.
+- **What to sync** as checkboxes: main config, instruction files, agents,
+  commands, plugins, skills, credentials and sessions. A switched-off category
+  stays local in both directions.
+- **Large-change guard.** A push that adds more than 300 files, more than
+  10 MB, or any file over 2 MB waits for confirmation (thresholds are
+  adjustable). Autosync never confirms: it records a failure and notifies.
+  Generated directories (`node_modules`, `.venv`, `venv`, `__pycache__`,
+  `dist`, `.cache`) are never staged.
+- **Restore a file from history**, with the replaced version kept in the
+  recovery folder.
+- **Device list** built from commit history, and renaming this machine.
+- **Network proxy** for git, gh and npm, applied to child processes only.
+- **Preview** of what a sync would change before running it.
+- **Support bundle** export with tokens, passwords and URL credentials removed.
+- **Update** menu: check npm, upgrade, and an optional daily auto-update run
+  by the autosync job.
+
+### Changed
+- When autosync is on, the plugin no longer pushes on idle (it still pulls at
+  startup), so it never races the scheduled job.
+- Sync commits carry an `Opencode-Sync-Device` trailer naming the machine.
+- `link` accepts any git URL or local path in addition to `owner/name`.
+- A forced pull, and the first pull onto a machine that already has files, copy
+  the files they replace into `opencode-sync-recovery` under the data
+  directory first.
+
+### Fixed
+- A push that loses a race with another machine rebases and retries up to three
+  times instead of failing.
+- The first push from a machine whose config directory is not yet a
+  repository now writes the remote's skills out before staging, so it can no
+  longer publish every skill it lacks as a deletion.
+
 ## 3.1.1
 
 ### Fixed
