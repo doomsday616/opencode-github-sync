@@ -69,7 +69,7 @@ opencode-sync push
 // ~/.config/opencode/opencode.json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-github-sync"]
+  "plugins": ["opencode-github-sync"]
 }
 ```
 
