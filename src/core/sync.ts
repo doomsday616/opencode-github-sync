@@ -1,17 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  type GitResult,
-  git,
-  isGitRepo,
-  parseNameStatus,
-  parsePorcelainPaths,
-  toGitError,
-} from "./git.js";
-import { commitMessage, hostAlias } from "./host.js";
-import { applyOverrides, configMatchesRepo, findConfigFile } from "./overrides.js";
-import { type Roots, getDatabasePath, getRoots } from "./paths.js";
-import {
   type CategoryKey,
   type CategorySnapshot,
   disabledCategories,
@@ -20,7 +9,18 @@ import {
   restoreDisabled,
   snapshotDisabled,
 } from "./categories.js";
+import {
+  type GitResult,
+  git,
+  isGitRepo,
+  parseNameStatus,
+  parsePorcelainPaths,
+  toGitError,
+} from "./git.js";
 import { type GuardReport, LargeChangeError, evaluateGuard, writeLocalExcludes } from "./guard.js";
+import { commitMessage, hostAlias } from "./host.js";
+import { applyOverrides, configMatchesRepo, findConfigFile } from "./overrides.js";
+import { type Roots, getDatabasePath, getRoots } from "./paths.js";
 import { saveToRecovery } from "./recovery.js";
 import {
   LOCAL_RUNTIME_PATHS,
@@ -44,13 +44,7 @@ import {
   totalChanges,
 } from "./reporter.js";
 import { exportSessions, importSessions } from "./sessions.js";
-import {
-  DEFAULT_SETTINGS,
-  type Settings,
-  loadSettings,
-  repoBranch,
-  repoUrl,
-} from "./settings.js";
+import { DEFAULT_SETTINGS, type Settings, loadSettings, repoBranch, repoUrl } from "./settings.js";
 import { sqliteAvailable } from "./sqlite.js";
 import {
   createStageContext,

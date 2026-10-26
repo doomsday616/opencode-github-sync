@@ -5,10 +5,10 @@ import { ensureFile } from "./fsx.js";
 import { type Roots, getRoots } from "./paths.js";
 import type { Reporter } from "./reporter.js";
 import {
-  DEFAULT_SETTINGS,
   OVERRIDES_TEMPLATE,
   SETTINGS_TEMPLATE,
   type Settings,
+  defaultSettings,
   loadSettings,
   overridesPath,
   saveSettings,
@@ -198,12 +198,12 @@ function writeSetupFiles(
 
   const existing = fs.existsSync(settingsPath(roots.config))
     ? loadSettings(roots.config)
-    : { ...DEFAULT_SETTINGS };
+    : defaultSettings();
 
   const settings: Settings = {
     ...existing,
     repo: {
-      ...existing.repo,
+      // owner/name replaces any URL from an earlier link; the URL would win.
       owner: target.owner,
       name: target.name,
       branch: existing.repo.branch || "main",
@@ -238,6 +238,88 @@ function writeSetupFiles(
     settingsFile: settingsPath(roots.config),
     overridesFile: overridesPath(roots.config),
   };
+}
+
+/**
+ * True when the input is a git URL or a local path rather than `owner/name`.
+ * Such a repository is linked as given, without the GitHub CLI.
+ */
+export function isRepoUrl(input: string | undefined): boolean {
+  const value = (input ?? "").trim();
+  return (
+    /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ||
+    /^[^@\s]+@[^:\s]+:/.test(value) ||
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    value.startsWith("/") ||
+    value.startsWith("./") ||
+    value.startsWith("..") ||
+    value.endsWith(".git")
+  );
+}
+
+/** Extract `owner/name` from a GitHub URL, if it is one. */
+export function githubTargetFromUrl(url: string): RepoTarget | undefined {
+  const match = /github\.com[/:]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(url.trim());
+  return match ? { owner: match[1]!, name: match[2]! } : undefined;
+}
+
+/**
+ * Link by URL. Visibility cannot be checked without the GitHub API, so
+ * credential and session syncing are refused unless the URL is a GitHub
+ * repository that `gh` confirms is private.
+ */
+export function linkByUrl(options: SetupOptions & { url: string }): SetupResult {
+  const roots = options.roots ?? getRoots();
+  const url = options.url.trim();
+  const github = githubTargetFromUrl(url);
+  const isPrivate = github && ghAvailable() ? repoIsPrivate(github) : false;
+  if ((options.includeCredentials || options.includeSessions) && !isPrivate) {
+    throw new SetupError(
+      "Credential and session syncing need a repository confirmed to be private.\n" +
+        "Link it as owner/name with the GitHub CLI signed in, or leave those options off.",
+    );
+  }
+  fs.mkdirSync(roots.config, { recursive: true });
+  const existing = fs.existsSync(settingsPath(roots.config))
+    ? loadSettings(roots.config)
+    : defaultSettings();
+  const settings: Settings = {
+    ...existing,
+    repo: { url, branch: existing.repo.branch || "main" },
+    includeCredentials: options.includeCredentials ?? existing.includeCredentials,
+    sessions: {
+      ...existing.sessions,
+      enabled: options.includeSessions ?? existing.sessions.enabled,
+    },
+  };
+  saveSettings(settings, roots.config);
+  ensureFile(overridesPath(roots.config), OVERRIDES_TEMPLATE);
+  return {
+    target: github ?? { owner: "", name: url },
+    created: false,
+    settingsFile: settingsPath(roots.config),
+    overridesFile: overridesPath(roots.config),
+  };
+}
+
+/** Human-readable name of the configured repository. */
+export function repoLabel(settings: Settings): string | undefined {
+  if (settings.repo.owner && settings.repo.name)
+    return `${settings.repo.owner}/${settings.repo.name}`;
+  if (settings.repo.url) {
+    const gh = githubTargetFromUrl(settings.repo.url);
+    return gh ? `${gh.owner}/${gh.name}` : settings.repo.url.replace(/\/\/[^@/]+@/, "//");
+  }
+  return undefined;
+}
+
+/** Remove the repository from the local settings. No file is deleted. */
+export function unlinkSync(roots: Roots = getRoots()): void {
+  if (!fs.existsSync(settingsPath(roots.config))) return;
+  const settings = loadSettings(roots.config);
+  settings.repo = { branch: settings.repo.branch || "main" };
+  settings.autosync.enabled = false;
+  saveSettings(settings, roots.config);
 }
 
 /** Guess which of the user's repositories is a sync repository. */

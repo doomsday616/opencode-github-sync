@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import readline from "node:readline";
+import {
+  appendLog,
+  backoffRemainingMs,
+  failureCount,
+  readState,
+  runAutosync,
+  writeState,
+} from "../core/autosync.js";
+import { LargeChangeError } from "../core/guard.js";
 import { withSyncLock } from "../core/lock.js";
 import { getDatabasePath, getRoots } from "../core/paths.js";
 import { listSessions } from "../core/sessions.js";
@@ -12,13 +20,30 @@ import {
   saveSettings,
   settingsPath,
 } from "../core/settings.js";
-import { SetupError, discoverSyncRepos, initSync, linkSync } from "../core/setup.js";
+import {
+  SetupError,
+  discoverSyncRepos,
+  initSync,
+  isRepoUrl,
+  linkByUrl,
+  linkSync,
+} from "../core/setup.js";
 import { sqliteAvailable } from "../core/sqlite.js";
 import { SyncError, formatBytes, pull, push, status } from "../core/sync.js";
 import {
+  applyLocalSettings,
+  autosyncDeps,
+  formatTime,
+  realScheduler,
+  safeLoadSettings,
+  tomorrowMorning,
+} from "./app.js";
+import { type Args, parseArgs } from "./args.js";
+import { ago, t } from "./i18n.js";
+import { type SetupFlags, disableAutosync, enableAutosync, runMenu, runSetup } from "./menu.js";
+import {
   Spinner,
   banner,
-  changeList,
   createCliReporter,
   detail,
   fail,
@@ -28,57 +53,38 @@ import {
   ok,
   outcome,
   rule,
-  summaryLine,
   warn,
   write,
 } from "./render.js";
 import { glyph, paint, style } from "./theme.js";
+import { Ui } from "./ui.js";
 
 const LOCK_WAIT_MS = 5 * 60 * 1000;
 
-interface Args {
-  command: string;
-  positional: string[];
-  flags: Set<string>;
-  values: Map<string, string>;
+function newUi(): Ui {
+  return new Ui({
+    input: process.stdin,
+    output: process.stdout,
+    interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+  });
 }
 
-function parseArgs(argv: string[]): Args {
-  const positional: string[] = [];
-  const flags = new Set<string>();
-  const values = new Map<string, string>();
-
-  for (const arg of argv) {
-    if (!arg.startsWith("-")) {
-      positional.push(arg);
-      continue;
-    }
-    const clean = arg.replace(/^--?/, "");
-    const eq = clean.indexOf("=");
-    if (eq !== -1) values.set(clean.slice(0, eq), clean.slice(eq + 1));
-    else flags.add(clean);
+async function confirmForce(action: string, lines: string[], args: Args): Promise<boolean> {
+  if (args.flags.has("yes") || args.flags.has("y")) return true;
+  if (!process.stdin.isTTY) {
+    fail(t("cliNeedTty"));
+    return false;
   }
-
-  return { command: positional.shift() ?? "help", positional, flags, values };
-}
-
-async function confirm(question: string, lines: string[]): Promise<boolean> {
-  if (!process.stdin.isTTY) return false;
   write();
-  write(`  ${paint(" FORCE ", style.bold, style.red)}  ${paint(question, style.bold, style.text)}`);
+  write(
+    `  ${paint(" FORCE ", style.bold, style.red)}  ${paint(t("cliForceTitle", { action }), style.bold, style.text)}`,
+  );
   for (const line of lines) write(`  ${paint(`${glyph.bullet} ${line}`, style.muted)}`);
   write();
-
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise<string>((resolve) => {
-    rl.question(
-      `  ${paint("Type", style.muted)} ${paint("yes", style.bold, style.red)} ${paint("to continue: ", style.muted)}`,
-      resolve,
-    );
-  });
-  rl.close();
-  write();
-  return answer.trim().toLowerCase() === "yes";
+  const ui = newUi();
+  const answer = await ui.text(t("cliTypeYes"));
+  ui.close();
+  return answer?.trim().toLowerCase() === "yes";
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -86,113 +92,122 @@ async function confirm(question: string, lines: string[]): Promise<boolean> {
 async function runSync(action: "push" | "pull", args: Args): Promise<void> {
   const force = args.flags.has("force") || args.flags.has("f");
   const dryRun = args.flags.has("dry-run") || args.flags.has("n");
+  const allowLarge = args.flags.has("allow-large");
   const roots = getRoots();
 
-  banner(action === "push" ? "push to GitHub" : "pull from GitHub", force ? "FORCE" : undefined);
+  banner(action === "push" ? t("cliPushTitle") : t("cliPullTitle"), force ? "FORCE" : undefined);
 
   if (force && !dryRun) {
-    const consequences =
-      action === "push"
-        ? ["Any change made on another machine and not pulled here will be overwritten."]
-        : [
-            "Uncommitted local changes will be discarded.",
-            "Skills and state directories will be rewritten from the repository.",
-          ];
-    if (!(await confirm(`Force ${action}?`, consequences))) {
-      info("Cancelled.");
+    const consequences = action === "push" ? [t("cliForcePushWarn")] : [t("cliForcePullWarn")];
+    if (!(await confirmForce(action, consequences, args))) {
+      info(t("cancelled"));
       return;
     }
   }
 
-  const spinner = new Spinner(action === "push" ? "Preparing push" : "Preparing pull");
+  const spinner = new Spinner(action === "push" ? t("cliPreparingPush") : t("cliPreparingPull"));
   spinner.start();
   const reporter = createCliReporter(spinner);
 
   try {
     const result = await withSyncLock(roots.config, { waitMs: LOCK_WAIT_MS }, () =>
       action === "push"
-        ? push({ force, dryRun, reporter, roots })
+        ? push({ force, dryRun, reporter, roots, allowLarge })
         : pull({ force, dryRun, reporter, roots }),
     );
     spinner.stop();
 
     if (result.sessions) {
       const bits: string[] = [];
-      if (result.sessions.exported !== undefined) bits.push(`${result.sessions.exported} exported`);
-      if (result.sessions.imported !== undefined) bits.push(`${result.sessions.imported} imported`);
-      if (result.sessions.skipped) bits.push(`${result.sessions.skipped} skipped`);
-      if (bits.length > 0) detail(`Sessions: ${bits.join(", ")}`);
+      if (result.sessions.exported !== undefined)
+        bits.push(t("cliExported", { n: result.sessions.exported }));
+      if (result.sessions.imported !== undefined)
+        bits.push(t("cliImported", { n: result.sessions.imported }));
+      if (result.sessions.skipped) bits.push(t("cliSkipped", { n: result.sessions.skipped }));
+      if (bits.length > 0) detail(t("cliSessionsLine", { text: bits.join(", ") }));
+    }
+    if (result.guard) {
+      warn(t("largeTitle"));
+      detail(`${result.guard.addedFiles} / ${formatBytes(result.guard.totalBytes)}`);
     }
 
-    outcome(dryRun ? `${result.message} (dry run)` : result.message, result.changed);
+    outcome(dryRun ? t("cliDryRun", { message: result.message }) : result.message, result.changed);
     if (result.restartRequired && result.changed) {
-      info("Restart OpenCode for the new configuration to take effect.");
+      info(t("restartHint"));
       write();
     }
+  } catch (error) {
+    if (error instanceof LargeChangeError) {
+      spinner.stop();
+      fail(`${t("largeRefused")}\n${error.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
   } finally {
     spinner.stop();
   }
 }
 
 function runStatus(): void {
-  banner("status");
+  banner(t("stTitle"));
   const roots = getRoots();
   const state = status({ roots });
 
   if (!state.configured) {
-    fail("No sync repository configured.");
+    fail(t("cliNoRepo"));
     write();
-    info("Run `opencode-sync init` to create one.");
+    info(t("cliRunInit"));
     const found = discoverSyncRepos();
     if (found.length > 0) {
       write();
-      detail(
-        `Existing private repositories that look like a match: ${found.slice(0, 5).join(", ")}`,
-      );
-      detail("Link one with: opencode-sync link <owner/repo>");
+      detail(t("cliFoundRepos", { list: found.slice(0, 5).join(", ") }));
+      detail(t("cliLinkHint"));
     }
     write();
     return;
   }
 
-  keyValue("repository", paint(state.remote ?? "-", style.text));
-  keyValue("branch", paint(state.branch, style.text));
-  keyValue("machine", paint(state.machineAlias, style.text));
+  keyValue(t("stRepository"), paint(state.remote ?? "-", style.text));
+  keyValue(t("stBranch"), paint(state.branch, style.text));
+  keyValue(t("stMachine"), paint(state.machineAlias, style.text));
 
   if (!state.initialized) {
     write();
-    warn("The local repository is not initialised yet. Run `opencode-sync pull`.");
+    warn(t("cliNotInitialised"));
     write();
     return;
   }
 
   const sync =
     state.ahead === 0 && state.behind === 0
-      ? paint("in sync", style.green)
+      ? paint(t("stInSync"), style.green)
       : [
-          state.ahead > 0 ? paint(`${state.ahead} to push`, style.yellow) : "",
-          state.behind > 0 ? paint(`${state.behind} to pull`, style.cyan) : "",
+          state.ahead > 0 ? paint(t("stToPush", { n: state.ahead }), style.yellow) : "",
+          state.behind > 0 ? paint(t("stToPull", { n: state.behind }), style.cyan) : "",
         ]
           .filter(Boolean)
           .join(paint("  ", style.faint));
-  keyValue("state", sync);
+  keyValue(t("stState"), sync);
   keyValue(
-    "uncommitted",
-    state.dirty === 0 ? paint("clean", style.green) : paint(`${state.dirty} file(s)`, style.yellow),
+    t("stUncommitted"),
+    state.dirty === 0
+      ? paint(t("stClean"), style.green)
+      : paint(t("stFiles", { n: state.dirty }), style.yellow),
   );
   keyValue(
-    "overrides",
-    state.overridesActive ? paint("active", style.accent) : paint("none", style.muted),
+    t("stOverrides"),
+    state.overridesActive ? paint(t("stActive"), style.accent) : paint(t("none"), style.muted),
   );
   keyValue(
-    "sessions",
+    t("stSessions"),
     state.sessionsEnabled
-      ? paint(`enabled · ${state.sessionShards} shard(s)`, style.text)
-      : paint("disabled", style.muted),
+      ? paint(t("stSessionsOn", { n: state.sessionShards }), style.text)
+      : paint(t("stDisabled"), style.muted),
   );
 
   if (state.lastCommit) {
-    heading("Last commit");
+    heading(t("stLastCommit"));
     detail(state.lastCommit);
     if (state.lastCommitDate) detail(state.lastCommitDate);
   }
@@ -200,7 +215,7 @@ function runStatus(): void {
 }
 
 function runInit(args: Args, mode: "init" | "link"): void {
-  banner(mode === "init" ? "create a sync repository" : "link an existing repository");
+  banner(mode === "init" ? t("initTitle") : t("linkTitleCli"));
   const reporter = createCliReporter();
   const options = {
     repo: args.positional[0],
@@ -209,21 +224,29 @@ function runInit(args: Args, mode: "init" | "link"): void {
     includeSessions: args.flags.has("sessions"),
   };
 
-  const result = mode === "init" ? initSync(options) : linkSync(options);
+  const result =
+    mode === "link" && isRepoUrl(options.repo)
+      ? linkByUrl({ ...options, url: options.repo! })
+      : mode === "init"
+        ? initSync(options)
+        : linkSync(options);
+  const label = result.target.owner
+    ? `${result.target.owner}/${result.target.name}`
+    : result.target.name;
 
   ok(
     result.created
-      ? `Created ${paint(`${result.target.owner}/${result.target.name}`, style.bold, style.text)}`
-      : `Linked ${paint(`${result.target.owner}/${result.target.name}`, style.bold, style.text)}`,
+      ? t("initCreated", { repo: paint(label, style.bold, style.text) })
+      : t("initLinked", { repo: paint(label, style.bold, style.text) }),
   );
-  detail(`settings  ${result.settingsFile}`);
-  detail(`overrides ${result.overridesFile}`);
+  detail(t("initSettings", { file: result.settingsFile }));
+  detail(t("initOverrides", { file: result.overridesFile }));
 
-  heading("Next");
+  heading(t("initNext"));
   write(
     `  ${paint("1.", style.faint)} ${mode === "init" ? "opencode-sync push" : "opencode-sync pull"}`,
   );
-  write(`  ${paint("2.", style.faint)} Restart OpenCode`);
+  write(`  ${paint("2.", style.faint)} ${t("initRestart")}`);
   write();
 }
 
@@ -233,39 +256,43 @@ async function runSessions(args: Args): Promise<void> {
   const settings = loadSettings(roots.config);
 
   if (sub === "list") {
-    banner("sessions");
+    banner(t("sesTitle"));
     if (!(await sqliteAvailable())) {
-      fail("No SQLite driver available. Use Node 22.5+ or run under Bun.");
+      fail(t("sesNoSqlite"));
       write();
       return;
     }
     const limit = Number(args.values.get("limit") ?? 20);
     const sessions = await listSessions(getDatabasePath(roots), limit);
     if (sessions.length === 0) {
-      info("No sessions found.");
+      info(t("sesNone"));
       write();
       return;
     }
     for (const session of sessions) {
       const when = new Date(session.timeUpdated).toISOString().slice(0, 16).replace("T", " ");
-      const title = session.title || paint("(untitled)", style.faint);
+      const title = session.title || paint(t("sesUntitled"), style.faint);
       write(`  ${paint(when, style.faint)}  ${title}`);
       write(`  ${paint(" ".repeat(16), style.faint)}  ${paint(session.id, style.faint)}`);
     }
     write();
-    detail(`Pin a session with: opencode-sync sessions include <id>`);
+    detail(t("sesPinHint"));
     write();
     return;
   }
 
   if (sub === "include" || sub === "exclude") {
     const id = args.positional[1];
-    if (!id) throw new SyncError(`Usage: opencode-sync sessions ${sub} <session-id>`);
+    if (!id) throw new SyncError(t("sesUsage", { sub }));
     const list = sub === "include" ? settings.sessions.include : settings.sessions.exclude;
     if (!list.includes(id)) list.push(id);
     saveSettings(settings, roots.config);
-    banner("sessions");
-    ok(`${sub === "include" ? "Pinned" : "Excluded"} ${paint(id, style.text)}`);
+    banner(t("sesTitle"));
+    ok(
+      sub === "include"
+        ? t("sesPinned", { id: paint(id, style.text) })
+        : t("sesExcluded", { id: paint(id, style.text) }),
+    );
     write();
     return;
   }
@@ -273,43 +300,41 @@ async function runSessions(args: Args): Promise<void> {
   if (sub === "enable" || sub === "disable") {
     settings.sessions.enabled = sub === "enable";
     saveSettings(settings, roots.config);
-    banner("sessions");
-    ok(`Session sync ${sub}d`);
+    banner(t("sesTitle"));
+    ok(sub === "enable" ? t("sesEnabled") : t("sesDisabled"));
     if (sub === "enable") {
-      detail(
-        `Window: ${settings.sessions.days} day(s), up to ${settings.sessions.maxSessions} sessions`,
-      );
-      detail(`Per-session cap: ${formatBytes(settings.sessions.maxSessionBytes)}`);
-      warn("Only enable this for a private repository — conversations are private data.");
+      detail(t("sesWindow", { days: settings.sessions.days, max: settings.sessions.maxSessions }));
+      detail(t("sesCap", { size: formatBytes(settings.sessions.maxSessionBytes) }));
+      warn(t("sessionsWarn"));
     }
     write();
     return;
   }
 
-  throw new SyncError(`Unknown sessions subcommand: ${sub}`);
+  throw new SyncError(t("sesUnknown", { sub }));
 }
 
 function runOverrides(): void {
-  banner("per-machine overrides");
+  banner(t("ovCliTitle"));
   const roots = getRoots();
   const file = overridesPath(roots.config);
   if (!fs.existsSync(file)) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, OVERRIDES_TEMPLATE);
-    ok("Created the overrides file");
+    ok(t("ovCreated"));
   }
   detail(file);
   write();
-  info("Anything in this file stays on this machine and is re-applied after every pull.");
+  info(t("ovCliInfo"));
   write();
 }
 
 function runConfig(): void {
-  banner("settings");
+  banner(t("cfgTitle"));
   const roots = getRoots();
   const file = settingsPath(roots.config);
   if (!fs.existsSync(file)) {
-    fail("No settings file yet. Run `opencode-sync init`.");
+    fail(t("cfgMissing"));
     write();
     return;
   }
@@ -319,31 +344,190 @@ function runConfig(): void {
   write();
 }
 
+async function runAutosyncCommand(args: Args): Promise<void> {
+  const sub = args.positional[0] ?? "status";
+  const roots = getRoots();
+  const ctx = { roots, scheduler: realScheduler };
+
+  switch (sub) {
+    case "run": {
+      // Called by the scheduler: no banner, no colour noise, one log line.
+      const trigger = args.values.get("trigger") ?? "scheduled";
+      const outcomeResult = await runAutosync(autosyncDeps(roots), trigger);
+      write(
+        outcomeResult.action === "skip"
+          ? t("asRunSkipped", { reason: outcomeResult.reason })
+          : t("asRunDone", {
+              action: outcomeResult.action,
+              message: outcomeResult.message ?? outcomeResult.reason,
+            }),
+      );
+      if (!outcomeResult.ok) process.exitCode = 1;
+      return;
+    }
+    case "install": {
+      banner(t("asTitle"));
+      const settings = loadSettings(roots.config);
+      const result = realScheduler.install(roots, settings);
+      if (!result.ok) {
+        fail(t("autoInstallFailed", { error: result.detail.join("; ") }));
+        process.exitCode = 1;
+        return;
+      }
+      ok(t("asInstalled", { kind: result.kind }));
+      for (const d of result.detail) detail(d);
+      for (const w of result.warnings) warn(t("autoWarning", { text: w }));
+      if (!settings.autosync.enabled) warn(`${t("autoOff")} opencode-sync autosync enable`);
+      write();
+      return;
+    }
+    case "uninstall": {
+      banner(t("asTitle"));
+      const result = realScheduler.uninstall(roots);
+      ok(result.removed ? t("asUninstalled") : t("asNotInstalled"));
+      write();
+      return;
+    }
+    case "enable": {
+      banner(t("asTitle"));
+      const interval = Number(args.values.get("interval"));
+      if (Number.isFinite(interval) && interval >= 2) {
+        const s = loadSettings(roots.config);
+        s.autosync.intervalMinutes = Math.floor(interval);
+        saveSettings(s, roots.config);
+      }
+      if (!(await enableAutosync(ctx))) process.exitCode = 1;
+      write();
+      return;
+    }
+    case "disable":
+      banner(t("asTitle"));
+      disableAutosync(ctx);
+      write();
+      return;
+    case "reset": {
+      banner(t("asTitle"));
+      const before = failureCount(readState(roots));
+      writeState(roots, {
+        consecutiveFailures: 0,
+        lastError: null,
+        failureNotifiedAt: null,
+        lastAttemptAt: 0,
+      });
+      appendLog(roots, `reset: cleared ${before} failure(s)`);
+      ok(t("resetDone", { n: before }));
+      write();
+      return;
+    }
+    case "pause":
+    case "resume": {
+      banner(t("asTitle"));
+      const s = loadSettings(roots.config);
+      if (sub === "resume") {
+        s.autosync.pausedUntil = 0;
+        saveSettings(s, roots.config);
+        ok(t("resumed"));
+      } else {
+        const arg = args.positional[1] ?? "1";
+        const until = arg === "tomorrow" ? tomorrowMorning() : Date.now() + Number(arg) * 3600_000;
+        if (!Number.isFinite(until) || until <= Date.now()) throw new SyncError(t("asPauseUsage"));
+        s.autosync.pausedUntil = until;
+        saveSettings(s, roots.config);
+        ok(t("pausedUntil", { time: formatTime(until) }));
+      }
+      write();
+      return;
+    }
+    case "status": {
+      banner(t("asTitle"));
+      const s = loadSettings(roots.config);
+      const state = readState(roots);
+      const sched = realScheduler.status();
+      keyValue(
+        t("asEnabled"),
+        s.autosync.enabled ? paint(t("on"), style.green) : paint(t("off"), style.muted),
+        20,
+      );
+      keyValue(t("asInterval"), t("intervalMinutes", { n: s.autosync.intervalMinutes }), 20);
+      keyValue(
+        t("asScheduler"),
+        sched.installed
+          ? `${t("diagRegistered", { kind: sched.kind })}${sched.nextRun ? ` · ${sched.nextRun}` : ""}`
+          : t("diagNotRegistered"),
+        20,
+      );
+      if (s.autosync.pausedUntil > Date.now())
+        keyValue(t("asPaused"), formatTime(s.autosync.pausedUntil), 20);
+      keyValue(t("asLastRun"), ago(state.lastRunAt), 20);
+      keyValue(t("asLastSuccess"), ago(state.lastSuccessAt), 20);
+      if (state.lastOutcome) keyValue(t("asOutcome"), state.lastOutcome, 20);
+      const failures = failureCount(state);
+      if (failures) keyValue(t("asFailures"), String(failures), 20);
+      const wait = backoffRemainingMs(state, Date.now());
+      if (wait > 0)
+        keyValue(t("asNextAttempt"), t("inMinutes", { n: Math.ceil(wait / 60000) }), 20);
+      if (state.lastError) keyValue(t("asLastError"), paint(state.lastError, style.red), 20);
+      write();
+      return;
+    }
+    default:
+      throw new SyncError(t("asUsage"));
+  }
+}
+
+function setupFlags(args: Args): SetupFlags {
+  const mode = (args.values.get("mode") ?? "cli") as SetupFlags["mode"];
+  if (!["cli", "link", "auto"].includes(mode))
+    throw new SetupError(t("invalidValue", { value: mode }));
+  const interval = args.values.get("interval");
+  const prefer = args.values.get("prefer");
+  return {
+    mode,
+    repo: args.values.get("repo") ?? args.positional[0],
+    interval: interval ? Number(interval) : undefined,
+    lang: args.values.get("lang"),
+    proxy: args.values.get("proxy"),
+    prefer: prefer === "local" ? "local" : prefer === "repo" ? "repo" : undefined,
+  };
+}
+
 function runHelp(): void {
-  banner("sync OpenCode across machines");
+  banner(t("helpTitle"));
 
-  heading("Setup");
-  command("init [name|owner/repo]", "Create a private sync repository");
-  command("link <owner/repo>", "Use an existing sync repository");
+  heading(t("helpSetup"));
+  command("(no arguments) | menu", t("helpMenu"));
+  command("init [name|owner/repo]", t("helpInit"));
+  command("link <owner/repo|url>", t("helpLink"));
+  command("setup --mode cli|link|auto", t("helpSetupCmd"));
 
-  heading("Sync");
-  command("push", "Send this machine's configuration");
-  command("pull", "Apply the shared configuration");
-  command("status", "Show what is in sync and what is not");
+  heading(t("helpSync"));
+  command("push", t("helpPush"));
+  command("pull", t("helpPull"));
+  command("status", t("helpStatus"));
 
-  heading("Sessions");
-  command("sessions list", "Show recent sessions and their ids");
-  command("sessions enable | disable", "Turn selective session sync on or off");
-  command("sessions include <id>", "Always sync a session, ignoring the time window");
-  command("sessions exclude <id>", "Never sync a session");
+  heading(t("helpAutosync"));
+  command("autosync install | uninstall", t("helpAsInstall"));
+  command("autosync enable | disable", t("helpAsToggle"));
+  command("autosync status", t("helpAsStatus"));
+  command("autosync run", t("helpAsRun"));
+  command("autosync pause <h> | resume", t("helpAsPause"));
+  command("autosync reset", t("helpAsReset"));
 
-  heading("Machine-local");
-  command("overrides", "Open the per-machine configuration patch");
-  command("config", "Show the current settings");
+  heading(t("helpSessions"));
+  command("sessions list", t("helpSesList"));
+  command("sessions enable | disable", t("helpSesToggle"));
+  command("sessions include <id>", t("helpSesInclude"));
+  command("sessions exclude <id>", t("helpSesExclude"));
 
-  heading("Flags");
-  command("--force", "Overwrite the other side on conflict");
-  command("--dry-run", "Report what would change without doing it");
+  heading(t("helpLocal"));
+  command("overrides", t("helpOverrides"));
+  command("config", t("helpConfig"));
+
+  heading(t("helpFlags"));
+  command("--force", t("helpForce"));
+  command("--dry-run", t("helpDryRun"));
+  command("--allow-large", t("helpAllowLarge"));
+  command("--lang en|zh-CN", t("helpLang"));
 
   write();
   rule();
@@ -354,7 +538,7 @@ function runHelp(): void {
 }
 
 function command(name: string, description: string): void {
-  const padded = name.padEnd(30);
+  const padded = name.padEnd(32);
   write(`  ${paint(padded, style.cyan)}${paint(description, style.muted)}`);
 }
 
@@ -362,8 +546,28 @@ function command(name: string, description: string): void {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  const roots = getRoots();
+  applyLocalSettings(safeLoadSettings(roots), args.values.get("lang"));
 
   switch (args.command) {
+    case "menu": {
+      const ui = newUi();
+      try {
+        await runMenu({ ui, roots });
+      } finally {
+        ui.close();
+      }
+      return;
+    }
+    case "setup": {
+      const ui = newUi();
+      try {
+        await runSetup(setupFlags(args), { ui, roots });
+      } finally {
+        ui.close();
+      }
+      return;
+    }
     case "push":
     case "pull":
       await runSync(args.command, args);
@@ -380,6 +584,9 @@ async function main(): Promise<void> {
     case "sessions":
       await runSessions(args);
       return;
+    case "autosync":
+      await runAutosyncCommand(args);
+      return;
     case "overrides":
       runOverrides();
       return;
@@ -393,9 +600,9 @@ async function main(): Promise<void> {
       return;
     default:
       banner();
-      fail(`Unknown command: ${args.command}`);
+      fail(t("cliUnknown", { cmd: args.command }));
       write();
-      info("Run `opencode-sync help` to see everything.");
+      info(t("cliHelpHint"));
       write();
       process.exitCode = 1;
   }

@@ -252,6 +252,18 @@ export function readStageOutMark(root: string): string | undefined {
   }
 }
 
+/**
+ * When the real directories last matched the repository, in epoch ms; 0 when
+ * unknown. Any untracked file newer than this is a local edit.
+ */
+export function readStageOutMarkTime(root: string): number {
+  try {
+    return fs.statSync(stageOutMarkPath(root)).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 /** Record that the real directories now match HEAD. */
 export function writeStageOutMark(root: string): void {
   const head = headCommit(root);

@@ -215,6 +215,15 @@ export function repoBranch(settings: Settings): string {
   return settings.repo.branch || "main";
 }
 
+/**
+ * Idle pushes from inside OpenCode race the scheduled autosync job for the
+ * same files, so once autosync owns a machine the plugin keeps only its
+ * startup pull.
+ */
+export function idlePushEnabled(settings: Settings): boolean {
+  return settings.autoPushOnIdle && !settings.autosync?.enabled;
+}
+
 export const SETTINGS_TEMPLATE = `{
   // opencode-github-sync settings. This file is never committed.
   "repo": {
