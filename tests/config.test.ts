@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseNameStatus, parsePorcelainPaths } from "../src/core/git.js";
+import { parseNameStatus, parsePorcelainPaths, parsePorcelainZ } from "../src/core/git.js";
 import { commitMessage, hostAlias, sanitizeAlias } from "../src/core/host.js";
 import { deepMerge, parseJsonc } from "../src/core/jsonc.js";
 import { stripOverrides } from "../src/core/overrides.js";
@@ -194,6 +194,13 @@ describe("parsePorcelainPaths", () => {
 
   it("returns nothing for empty input", () => {
     expect(parsePorcelainPaths("")).toEqual([]);
+  });
+});
+
+describe("parsePorcelainZ", () => {
+  it("reads NUL-separated records, a trimmed first record and both sides of a rename", () => {
+    const out = "M a b.md\0?? 技能.md\0R  new.md\0old.md\0 D gone.md";
+    expect(parsePorcelainZ(out)).toEqual(["a b.md", "技能.md", "new.md", "old.md", "gone.md"]);
   });
 });
 

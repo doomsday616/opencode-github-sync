@@ -37,6 +37,48 @@ export interface SessionSettings {
   directories: string[];
 }
 
+/** Background sync driven by the operating system's scheduler. Machine-local. */
+export interface AutosyncSettings {
+  /** Opt-in. Only a machine that turned this on ever syncs unattended. */
+  enabled: boolean;
+  /** Minutes between scheduled runs. Minimum 2. */
+  intervalMinutes: number;
+  /** Seconds the synced trees must be quiet before a push. */
+  settleSeconds: number;
+  /** Windows only: register with S4U so it runs while logged off (needs elevation). */
+  runWhenLoggedOff: boolean;
+  /** Epoch milliseconds; no unattended sync before this moment. 0 = not paused. */
+  pausedUntil: number;
+  /** Check npm once a day from the scheduled job and upgrade when newer. */
+  autoUpdate: boolean;
+}
+
+/** Thresholds above which a push needs explicit confirmation. */
+export interface GuardSettings {
+  /** Maximum number of newly added files in one push. */
+  maxFiles: number;
+  /** Maximum total size of added and modified files in one push. */
+  maxBytes: number;
+  /** Maximum size of any single added or modified file. */
+  maxFileBytes: number;
+  /** Directory names never copied out of synced trees (generated content). */
+  skipDirs: string[];
+}
+
+/**
+ * Which parts of the config directory this machine shares.
+ *
+ * A category switched off is local to this machine in both directions: its
+ * local changes are never committed and incoming versions never replace it.
+ */
+export interface SyncCategories {
+  config: boolean;
+  instructions: boolean;
+  agents: boolean;
+  commands: boolean;
+  plugins: boolean;
+}
+
 export interface Settings {
   repo: RepoSettings;
   /** Stable alias for this machine used in commit messages. */
@@ -54,7 +96,19 @@ export interface Settings {
   autoPullOnStartup: boolean;
   /** Push automatically when a session goes idle (plugin only). */
   autoPushOnIdle: boolean;
+  /** Parts of the config directory to share. */
+  categories: SyncCategories;
+  autosync: AutosyncSettings;
+  guard: GuardSettings;
+  /** HTTP(S) proxy for git, gh and npm child processes. Empty = none. */
+  proxy: string;
+  /** Interface language; empty = auto-detect. */
+  language: string;
+  /** Desktop notifications from the scheduled job. */
+  notifications: boolean;
 }
+
+export const DEFAULT_SKIP_DIRS = ["node_modules", ".venv", "venv", "__pycache__", "dist", ".cache"];
 
 export const DEFAULT_SETTINGS: Settings = {
   repo: { branch: "main" },
@@ -73,7 +127,27 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   autoPullOnStartup: true,
   autoPushOnIdle: false,
+  categories: { config: true, instructions: true, agents: true, commands: true, plugins: true },
+  autosync: {
+    enabled: false,
+    intervalMinutes: 5,
+    settleSeconds: 60,
+    runWhenLoggedOff: false,
+    pausedUntil: 0,
+    autoUpdate: false,
+  },
+  guard: {
+    maxFiles: 300,
+    maxBytes: 10 * 1024 * 1024,
+    maxFileBytes: 2 * 1024 * 1024,
+    skipDirs: [...DEFAULT_SKIP_DIRS],
+  },
+  proxy: "",
+  language: "",
+  notifications: true,
 };
+
+export const MIN_AUTOSYNC_INTERVAL = 2;
 
 export function settingsPath(configRoot = getConfigRoot()): string {
   return path.join(configRoot, SETTINGS_FILE);
@@ -89,19 +163,38 @@ function mergeSettings(base: Settings, patch: Partial<Settings>): Settings {
     ...patch,
     repo: { ...base.repo, ...(patch.repo ?? {}) },
     sessions: { ...base.sessions, ...(patch.sessions ?? {}) },
+    categories: { ...base.categories, ...(patch.categories ?? {}) },
+    autosync: { ...base.autosync, ...(patch.autosync ?? {}) },
+    guard: { ...base.guard, ...(patch.guard ?? {}) },
   };
+}
+
+/** A deep copy of the defaults, so callers can mutate the result freely. */
+export function defaultSettings(): Settings {
+  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 }
 
 export function loadSettings(configRoot = getConfigRoot()): Settings {
   const file = settingsPath(configRoot);
-  if (!fs.existsSync(file)) return { ...DEFAULT_SETTINGS };
+  if (!fs.existsSync(file)) return defaultSettings();
   let parsed: Partial<Settings>;
   try {
     parsed = parseJsonc<Partial<Settings>>(fs.readFileSync(file, "utf8"));
   } catch (e) {
     throw new Error(`Cannot read ${SETTINGS_FILE}: ${(e as Error).message}`);
   }
-  return mergeSettings(DEFAULT_SETTINGS, parsed ?? {});
+  return mergeSettings(defaultSettings(), parsed ?? {});
+}
+
+/** Load, change and save in one step. Returns the saved settings. */
+export function updateSettings(
+  mutate: (settings: Settings) => void,
+  configRoot = getConfigRoot(),
+): Settings {
+  const settings = loadSettings(configRoot);
+  mutate(settings);
+  saveSettings(settings, configRoot);
+  return settings;
 }
 
 export function saveSettings(settings: Settings, configRoot = getConfigRoot()): void {
@@ -120,6 +213,15 @@ export function repoUrl(settings: Settings): string | undefined {
 
 export function repoBranch(settings: Settings): string {
   return settings.repo.branch || "main";
+}
+
+/**
+ * Idle pushes from inside OpenCode race the scheduled autosync job for the
+ * same files, so once autosync owns a machine the plugin keeps only its
+ * startup pull.
+ */
+export function idlePushEnabled(settings: Settings): boolean {
+  return settings.autoPushOnIdle && !settings.autosync?.enabled;
 }
 
 export const SETTINGS_TEMPLATE = `{

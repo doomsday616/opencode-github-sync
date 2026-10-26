@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { withSyncLock } from "../core/lock.js";
 import { getRoots } from "../core/paths.js";
 import { CollectingReporter } from "../core/reporter.js";
-import { loadSettings, repoUrl, settingsPath } from "../core/settings.js";
+import { idlePushEnabled, loadSettings, repoUrl, settingsPath } from "../core/settings.js";
 import { pull, push, status } from "../core/sync.js";
 
 /**
@@ -239,6 +239,7 @@ export const OpencodeGithubSync = async (ctx: PluginContext) => {
   }
 
   const settings = loadSettings(roots.config);
+  const idlePush = idlePushEnabled(settings);
 
   if (settings.autoPullOnStartup) {
     // Deliberately not awaited: OpenCode should finish starting even when the
@@ -248,7 +249,7 @@ export const OpencodeGithubSync = async (ctx: PluginContext) => {
 
   return {
     event: async ({ event }: { event: { type: string } }) => {
-      if (event.type === "session.idle" && settings.autoPushOnIdle) {
+      if (event.type === "session.idle" && idlePush) {
         void runPush(client, false);
       }
     },
@@ -302,7 +303,7 @@ async function setup(ctx: V2Context): Promise<() => void> {
     });
   });
 
-  if (settings.autoPushOnIdle) {
+  if (idlePushEnabled(settings)) {
     void (async () => {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {

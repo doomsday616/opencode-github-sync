@@ -38,8 +38,10 @@ ${DATA_DIR}/snapshot/
 ${DATA_DIR}/storage/session
 ${DATA_DIR}/storage/session_diff
 
-# Machine-local UI state
+# Machine-local UI state and the autosync runtime state
 ${STATE_DIR}/session.json
+${STATE_DIR}/opencode-sync-autosync.json
+${STATE_DIR}/opencode-sync-autosync.json.tmp
 
 # Empty directories recreated by OpenCode at runtime
 plugin/
@@ -101,6 +103,15 @@ export interface EnsureRepoOptions {
   root: string;
   remote: string;
   branch: string;
+  /**
+   * How an existing remote history is adopted by a directory that is not yet
+   * a repository. `remote` (default) checks the remote files out over the
+   * local ones; `local` keeps every local file and only moves the branch, so
+   * the next commit records this machine's state on top of the remote.
+   */
+  adopt?: "remote" | "local";
+  /** Called before `remote` adoption overwrites the worktree. */
+  beforeAdopt?: (root: string, ref: string) => void;
 }
 
 export type RepoState = "ready" | "adopted" | "fresh";
@@ -147,7 +158,12 @@ export function initRepo(options: EnsureRepoOptions): RepoState {
 
   const fetched = git(["fetch", "origin", branch], { cwd: root });
   if (fetched.ok && git(["rev-parse", `origin/${branch}`], { cwd: root }).ok) {
-    git(["reset", "--hard", `origin/${branch}`], { cwd: root });
+    if (options.adopt === "local") {
+      git(["reset", "-q", `origin/${branch}`], { cwd: root });
+    } else {
+      options.beforeAdopt?.(root, `origin/${branch}`);
+      git(["reset", "--hard", `origin/${branch}`], { cwd: root });
+    }
     git(["branch", `--set-upstream-to=origin/${branch}`, branch], { cwd: root });
     return "adopted";
   }
@@ -233,6 +249,18 @@ export function readStageOutMark(root: string): string | undefined {
     return fs.readFileSync(stageOutMarkPath(root), "utf8").trim() || undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * When the real directories last matched the repository, in epoch ms; 0 when
+ * unknown. Any untracked file newer than this is a local edit.
+ */
+export function readStageOutMarkTime(root: string): number {
+  try {
+    return fs.statSync(stageOutMarkPath(root)).mtimeMs;
+  } catch {
+    return 0;
   }
 }
 

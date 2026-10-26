@@ -17,6 +17,7 @@ import { git } from "./git.js";
 import { parseJsonc } from "./jsonc.js";
 import { configTextForRepo, findConfigFile } from "./overrides.js";
 import { AGENTS_DIR, DATA_DIR, type Roots, STATE_DIR, getRoots } from "./paths.js";
+import { saveToRecovery } from "./recovery.js";
 import type { Reporter } from "./reporter.js";
 import type { Settings } from "./settings.js";
 
@@ -46,8 +47,15 @@ const DATA_FILES = ["sync-state.json"];
  * and `storage/migration` is a one-byte file — `copyPath` resolves which.
  */
 const DATA_PATHS = ["storage/project", "storage/migration"];
-/** State files that describe this machine's current UI, not its configuration. */
-const MACHINE_STATE_FILES = new Set(["session.json"]);
+/**
+ * State files that describe this machine, not its configuration: the current
+ * UI session and the autosync scheduler's own bookkeeping.
+ */
+export const MACHINE_STATE_FILES = new Set([
+  "session.json",
+  "opencode-sync-autosync.json",
+  "opencode-sync-autosync.json.tmp",
+]);
 
 const SKILL_LOCK = ".skill-lock.json";
 
@@ -231,6 +239,8 @@ export function stageOut(ctx: StageContext): void {
   const repoState = path.join(repoRoot, STATE_DIR);
   const repoAgents = path.join(repoRoot, AGENTS_DIR);
 
+  if (force) saveReplacedDirs(ctx, repoAgents);
+
   ensureDir(roots.data);
   for (const file of dataFilesFor(settings)) {
     // `preserveMissing` matters for credentials: a machine that syncs without
@@ -264,6 +274,61 @@ export function stageOut(ctx: StageContext): void {
   }
 
   stageExtraPathsOut(ctx);
+}
+
+/**
+ * A forced stage-out makes the skills folder and directory extra paths exact
+ * copies of the repository. Every local file that is about to disappear or
+ * change is copied to the recovery folder first. Nested `.git` folders are
+ * not copied: they are clones the `skills` CLI can recreate.
+ */
+function saveReplacedDirs(ctx: StageContext, repoAgents: string): void {
+  const pairs: { local: string; repo: string; label: string }[] = [];
+  if (ctx.settings.includeSkills && fs.existsSync(repoAgents)) {
+    pairs.push({ local: ctx.roots.agents, repo: repoAgents, label: "skills" });
+  }
+  for (const { entry, source, repo } of extraPathEntries(ctx)) {
+    if (fs.existsSync(repo) && fs.statSync(repo).isDirectory()) {
+      pairs.push({ local: source, repo, label: path.join("extra", sanitizeRelative(entry)) });
+    }
+  }
+  const entries: { source: string; rel: string }[] = [];
+  for (const { local, repo, label } of pairs) {
+    for (const rel of listFiles(local)) {
+      if (rel === SKILL_LOCK) continue;
+      const incoming = path.join(repo, rel);
+      const current = path.join(local, rel);
+      if (fs.existsSync(incoming) && sameBytes(current, incoming)) continue;
+      entries.push({ source: current, rel: path.join(label, rel) });
+    }
+  }
+  const dir = saveToRecovery(ctx.roots, "force-pull", entries);
+  if (dir) ctx.reporter.detail(`Saved the replaced local files to ${dir}`);
+}
+
+function listFiles(root: string, rel = ""): string[] {
+  let dirents: fs.Dirent[];
+  try {
+    dirents = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return dirents.flatMap((d) => {
+    const child = rel ? path.join(rel, d.name) : d.name;
+    if (d.isDirectory()) return d.name === ".git" ? [] : listFiles(root, child);
+    return d.isFile() ? [child] : [];
+  });
+}
+
+function sameBytes(a: string, b: string): boolean {
+  try {
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    if (!sb.isFile() || sa.size !== sb.size) return false;
+    return fs.readFileSync(a).equals(fs.readFileSync(b));
+  } catch {
+    return false;
+  }
 }
 
 function stageSkillLockOut(ctx: StageContext, repoAgents: string): void {

@@ -3,8 +3,15 @@ import { SPINNER, canAnimate, displayWidth, glyph, paint, style } from "./theme.
 
 const INDENT = "  ";
 
+/** Where rendered output goes. Swapped by tests that drive the menu. */
+let sink: { write: (text: string) => unknown } = process.stdout;
+
+export function setOutput(target: { write: (text: string) => unknown }): void {
+  sink = target;
+}
+
 export function write(line = ""): void {
-  process.stdout.write(`${line}\n`);
+  sink.write(`${line}\n`);
 }
 
 /**
