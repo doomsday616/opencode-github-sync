@@ -12,6 +12,17 @@ import { commitMessage, hostAlias } from "./host.js";
 import { applyOverrides, configMatchesRepo, findConfigFile } from "./overrides.js";
 import { type Roots, getDatabasePath, getRoots } from "./paths.js";
 import {
+  type CategoryKey,
+  type CategorySnapshot,
+  disabledCategories,
+  disabledPathspecs,
+  isDisabledPath,
+  restoreDisabled,
+  snapshotDisabled,
+} from "./categories.js";
+import { type GuardReport, LargeChangeError, evaluateGuard, writeLocalExcludes } from "./guard.js";
+import { saveToRecovery } from "./recovery.js";
+import {
   LOCAL_RUNTIME_PATHS,
   assertPushLanded,
   assertRemoteReachable,
@@ -33,7 +44,13 @@ import {
   totalChanges,
 } from "./reporter.js";
 import { exportSessions, importSessions } from "./sessions.js";
-import { type Settings, loadSettings, repoBranch, repoUrl } from "./settings.js";
+import {
+  DEFAULT_SETTINGS,
+  type Settings,
+  loadSettings,
+  repoBranch,
+  repoUrl,
+} from "./settings.js";
 import { sqliteAvailable } from "./sqlite.js";
 import {
   createStageContext,
@@ -51,6 +68,19 @@ export interface SyncOptions {
   force?: boolean;
   /** Compute the result without writing anything to the remote. */
   dryRun?: boolean;
+  /**
+   * Called when a push exceeds the large-change limits. Return true to send it
+   * anyway. Without a callback an oversized push is refused.
+   */
+  confirmLarge?: (report: GuardReport) => boolean | Promise<boolean>;
+  /** Skip the large-change guard entirely. */
+  allowLarge?: boolean;
+  /**
+   * First push from a directory that is not a repository yet, against a
+   * remote that already has history: `remote` (default) takes the remote
+   * files first, `local` keeps every local file and records it on top.
+   */
+  adopt?: "remote" | "local";
 }
 
 export interface SyncResult {
@@ -62,6 +92,8 @@ export interface SyncResult {
   message: string;
   /** True when OpenCode must restart for the pulled config to take effect. */
   restartRequired: boolean;
+  /** Present on a dry-run push that would trip the large-change guard. */
+  guard?: GuardReport;
 }
 
 class SyncError extends Error {
@@ -70,6 +102,22 @@ class SyncError extends Error {
     this.name = "SyncError";
   }
 }
+
+/**
+ * Another machine published between our rebase and our push, every time we
+ * retried. That is contention, not an outage: the next run simply tries again.
+ */
+export class PushRaceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PushRaceError";
+  }
+}
+
+/** Commit trailer naming the machine that produced a sync commit. */
+export const DEVICE_TRAILER = "Opencode-Sync-Device";
+
+const PUSH_RACE_RETRIES = 3;
 
 interface Context {
   root: string;
@@ -80,6 +128,9 @@ interface Context {
   reporter: Reporter;
   force: boolean;
   dryRun: boolean;
+  confirmLarge?: SyncOptions["confirmLarge"];
+  allowLarge: boolean;
+  disabled: CategoryKey[];
 }
 
 function prepare(options: SyncOptions): Context {
@@ -101,6 +152,9 @@ function prepare(options: SyncOptions): Context {
     reporter: options.reporter ?? silentReporter,
     force: options.force ?? false,
     dryRun: options.dryRun ?? false,
+    confirmLarge: options.confirmLarge,
+    allowLarge: options.allowLarge ?? false,
+    disabled: disabledCategories(settings.categories),
   };
 }
 
@@ -118,9 +172,16 @@ export async function push(options: SyncOptions = {}): Promise<SyncResult> {
 
   if (!fs.existsSync(root)) throw new SyncError(`Config directory not found: ${root}`);
 
-  ensureRepo({ root, remote: ctx.remote, branch });
+  ensureRepo({
+    root,
+    remote: ctx.remote,
+    branch,
+    adopt: options.adopt ?? "remote",
+    beforeAdopt: (_root, ref) => saveOverwritten(ctx, ref, "first-push"),
+  });
   assertRemoteReachable(root, branch, "Push", true);
   writeRepoMetadata(root);
+  writeLocalExcludes(root, ctx.settings.guard?.skipDirs ?? []);
 
   try {
     return await runPush(ctx);
@@ -154,6 +215,7 @@ async function runPush(ctx: Context): Promise<SyncResult> {
 
   git(["add", "-A"], { cwd: root });
   unstageLocalRuntimePaths(root);
+  unstageDisabled(ctx);
 
   const staged = git(["diff", "--cached", "--name-status"], { cwd: root });
   const files = toChangedFiles(staged, true);
@@ -194,7 +256,13 @@ async function runPush(ctx: Context): Promise<SyncResult> {
       // anything — and the result must reach the real directories, or the next
       // push would read everything new as deleted on this machine.
       reporter.step(`Fast-forwarding ${behind} remote commit(s)`);
-      const ff = git(["merge", "--ff-only", `origin/${branch}`], { cwd: root });
+      const aside = setAsideDisabled(ctx);
+      let ff: GitResult;
+      try {
+        ff = git(["merge", "--ff-only", `origin/${branch}`], { cwd: root });
+      } finally {
+        restoreDisabled(root, ctx.disabled, aside);
+      }
       if (!ff.ok) throw toGitError("Fast-forward", ff);
       await finishPush(ctx, true);
       return done(
@@ -212,8 +280,11 @@ async function runPush(ctx: Context): Promise<SyncResult> {
   }
 
   reporter.changes(summary, files);
+  const guard = ctx.allowLarge
+    ? undefined
+    : evaluateGuard(root, files, ctx.settings.guard ?? DEFAULT_SETTINGS.guard);
   if (ctx.dryRun) {
-    return done(
+    const result = done(
       "push",
       true,
       summary,
@@ -221,10 +292,24 @@ async function runPush(ctx: Context): Promise<SyncResult> {
       `${totalChanges(summary)} change(s) would be pushed`,
       sessions,
     );
+    if (guard && guard.reasons.length > 0) result.guard = guard;
+    return result;
+  }
+
+  if (guard && guard.reasons.length > 0) {
+    const allowed = ctx.confirmLarge ? await ctx.confirmLarge(guard) : false;
+    if (!allowed) {
+      // Leave nothing staged: the next attempt must re-evaluate from scratch.
+      git(["reset", "-q"], { cwd: root });
+      throw new LargeChangeError(guard);
+    }
   }
 
   const alias = hostAlias(ctx.settings.machineAlias);
-  const commit = git(["commit", "-m", commitMessage("sync", alias)], { cwd: root });
+  const commit = git(
+    ["commit", "-m", commitMessage("sync", alias), "-m", `${DEVICE_TRAILER}: ${alias}`],
+    { cwd: root },
+  );
   if (!commit.ok) throw toGitError("Commit", commit);
   // The commit was built from this machine's directories, so they match it.
   // If the rebase or the network push below fails, the next run sees the mark
@@ -268,7 +353,14 @@ function pushBranch(ctx: Context, alreadyCommitted: boolean): boolean {
   const hasRemoteBranch = git(["rev-parse", `origin/${branch}`], { cwd: root }).ok;
   if (!hasRemoteBranch) {
     const result = git(["push", "-u", "origin", branch], { cwd: root });
-    if (!result.ok) throw toGitError("Push", result);
+    if (!result.ok) {
+      if (isRejected(result)) {
+        throw new PushRaceError(
+          "Another machine created the branch at the same moment. The next sync will retry.",
+        );
+      }
+      throw toGitError("Push", result);
+    }
     assertPushLanded(root, branch, "Push");
     return false;
   }
@@ -289,24 +381,73 @@ function pushBranch(ctx: Context, alreadyCommitted: boolean): boolean {
     return false;
   }
 
-  const before = headCommit(root);
-  const rebase = git(["pull", "--rebase", "origin", branch], { cwd: root });
-  if (!rebase.ok) {
-    git(["rebase", "--abort"], { cwd: root });
-    throw new SyncError(
-      "The remote has changes that conflict with this machine.\n" +
-        "Run `opencode-sync pull` to take the remote version, or `opencode-sync push --force` to overwrite it.",
-    );
-  }
-  // The rebase moves HEAD only when it replayed local commits onto new remote
-  // ones; an unchanged HEAD means nothing arrived.
-  const integrated = headCommit(root) !== before;
+  // Another machine can publish between our rebase and our push. Losing that
+  // race is contention, not failure: rebase onto the newcomer and try again.
+  // Files in disabled categories are set aside so local-only edits never
+  // block the rebase.
+  const aside = setAsideDisabled(ctx);
+  let integrated = false;
+  try {
+    for (let attempt = 1; ; attempt++) {
+      const before = headCommit(root);
+      const rebase = git(["pull", "--rebase", "origin", branch], { cwd: root });
+      if (!rebase.ok) {
+        git(["rebase", "--abort"], { cwd: root });
+        throw new SyncError(
+          "The remote has changes that conflict with this machine.\n" +
+            "Run `opencode-sync pull` to take the remote version, or `opencode-sync push --force` to overwrite it.",
+        );
+      }
+      // The rebase moves HEAD only when it replayed local commits onto new
+      // remote ones; an unchanged HEAD means nothing arrived.
+      if (headCommit(root) !== before) integrated = true;
 
-  const result = git(["push", "origin", branch], { cwd: root });
-  if (!result.ok) throw toGitError("Push", result);
+      const result = git(["push", "origin", branch], { cwd: root });
+      if (result.ok) break;
+      if (!isRejected(result)) throw toGitError("Push", result);
+      if (attempt >= PUSH_RACE_RETRIES) {
+        throw new PushRaceError(
+          `Another machine kept publishing first (${attempt} attempts). The next sync will retry.`,
+        );
+      }
+      reporter.step("Another machine pushed first; rebasing and retrying");
+    }
+  } finally {
+    restoreDisabled(root, ctx.disabled, aside);
+  }
   assertPushLanded(root, branch, "Push");
   void alreadyCommitted;
   return integrated;
+}
+
+function isRejected(result: GitResult): boolean {
+  return /non-fast-forward|fetch first|\[rejected\]|failed to push some refs|stale info/i.test(
+    `${result.stderr}\n${result.stdout}`,
+  );
+}
+
+// ── Disabled categories ─────────────────────────────────────────────────────
+
+function unstageDisabled(ctx: Context): void {
+  if (ctx.disabled.length === 0) return;
+  git(["reset", "-q", "--", ...disabledPathspecs(ctx.disabled)], { cwd: ctx.root });
+}
+
+/**
+ * Copy the disabled categories aside and bring their tracked files back to
+ * HEAD, so a rebase or reset can run on a clean tree. `restoreDisabled` puts
+ * the local versions back afterwards.
+ */
+function setAsideDisabled(ctx: Context): CategorySnapshot | null {
+  if (ctx.disabled.length === 0) return null;
+  const snapshot = snapshotDisabled(ctx.root, ctx.disabled);
+  if (!snapshot) return null;
+  // Untracked local-only files would block an incoming file at the same path.
+  for (const rel of snapshot.files) fs.rmSync(path.join(ctx.root, rel), { force: true });
+  const tracked = git(["ls-files", "--", ...disabledPathspecs(ctx.disabled)], { cwd: ctx.root });
+  const files = tracked.ok ? tracked.stdout.split("\n").filter(Boolean) : [];
+  if (files.length > 0) git(["checkout", "HEAD", "--", ...files], { cwd: ctx.root });
+  return snapshot;
 }
 
 // ── Pull ────────────────────────────────────────────────────────────────────
@@ -318,7 +459,13 @@ export async function pull(options: SyncOptions = {}): Promise<SyncResult> {
   fs.mkdirSync(root, { recursive: true });
 
   if (!isGitRepo(root)) {
-    const state = ensureRepo({ root, remote: ctx.remote, branch });
+    const state = ensureRepo({
+      root,
+      remote: ctx.remote,
+      branch,
+      adopt: "remote",
+      beforeAdopt: (_root, ref) => saveOverwritten(ctx, ref, "first-pull"),
+    });
     if (state === "fresh") {
       return done(
         "pull",
@@ -392,28 +539,37 @@ export async function pull(options: SyncOptions = {}): Promise<SyncResult> {
   // that would conflict on every single run.
   normalizeConfigForRepo(stageCtx);
 
-  const stashed = prepareWorktree(ctx);
-  const nameStatus = git(["diff", "--name-status", "HEAD", `origin/${branch}`], { cwd: root });
-  const files = toChangedFiles(nameStatus, true);
-  const summary = summarize(files);
+  if (force && !ctx.dryRun) saveOverwritten(ctx, `origin/${branch}`, "force-pull");
+  const aside = ctx.dryRun ? null : setAsideDisabled(ctx);
+  let stashed = false;
+  let files: ChangedFile[] = [];
+  let summary = emptySummary();
+  try {
+    stashed = prepareWorktree(ctx);
+    const nameStatus = git(["diff", "--name-status", "HEAD", `origin/${branch}`], { cwd: root });
+    files = toChangedFiles(nameStatus, true).filter((f) => !isDisabledPath(f.path, ctx.disabled));
+    summary = summarize(files);
 
-  if (ctx.dryRun) {
-    if (stashed) restoreStash(ctx);
-    return done(
-      "pull",
-      files.length > 0,
-      summary,
-      files,
-      `${totalChanges(summary)} change(s) would be pulled`,
-    );
-  }
+    if (ctx.dryRun) {
+      if (stashed) restoreStash(ctx);
+      return done(
+        "pull",
+        files.length > 0,
+        summary,
+        files,
+        `${totalChanges(summary)} change(s) would be pulled`,
+      );
+    }
 
-  const reset = git(["reset", "--hard", `origin/${branch}`], { cwd: root });
-  if (!reset.ok) {
+    const reset = git(["reset", "--hard", `origin/${branch}`], { cwd: root });
+    if (!reset.ok) {
+      if (stashed) restoreStash(ctx);
+      throw toGitError("Reset", reset);
+    }
     if (stashed) restoreStash(ctx);
-    throw toGitError("Reset", reset);
+  } finally {
+    restoreDisabled(root, ctx.disabled, aside);
   }
-  if (stashed) restoreStash(ctx);
 
   stageOut(createStageContext(root, ctx.settings, reporter, force, ctx.roots));
   const sessions = await maybeImportSessions(ctx);
@@ -642,6 +798,32 @@ function countRealChanges(root: string, porcelain: string): number {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Copy every local file that a move to `ref` would overwrite or delete into
+ * the recovery folder. Called before a forced pull and before a first link
+ * adopts the remote, the two moments local bytes are replaced wholesale.
+ */
+function saveOverwritten(ctx: Context, ref: string, label: string): string | undefined {
+  const { root } = ctx;
+  const candidates = new Set<string>();
+  const hasHead = git(["rev-parse", "--verify", "HEAD"], { cwd: root }).ok;
+  if (hasHead) {
+    const diff = git(["diff", "--name-only", "HEAD", ref], { cwd: root });
+    for (const p of diff.ok ? diff.stdout.split("\n") : []) if (p) candidates.add(p);
+    const dirty = git(["status", "--porcelain", "--", ".", ...excludePathspecs()], { cwd: root });
+    for (const p of parsePorcelainPaths(dirty.ok ? dirty.stdout : "")) candidates.add(p);
+  } else {
+    const files = git(["ls-tree", "-r", "--name-only", ref], { cwd: root });
+    for (const p of files.ok ? files.stdout.split("\n") : []) if (p) candidates.add(p);
+  }
+  const entries = [...candidates]
+    .filter((rel) => !isLocalRuntimePath(rel))
+    .map((rel) => ({ source: path.join(root, rel), rel }));
+  const dir = saveToRecovery(ctx.roots, label, entries);
+  if (dir) ctx.reporter.detail(`Saved the replaced local files to ${dir}`);
+  return dir;
+}
 
 function countCommits(root: string, range: string): number {
   const result = git(["rev-list", "--count", range], { cwd: root });

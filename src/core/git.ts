@@ -1,5 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
+import { childEnv } from "./env.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,7 +39,8 @@ export function git(args: string[], options: GitOptions): GitResult {
       encoding: "utf8",
       stdio: "pipe",
       timeout: options.timeoutMs ?? 0,
-      env: options.interactive ? process.env : { ...process.env, ...NO_PROMPT_ENV },
+      windowsHide: true,
+      env: options.interactive ? childEnv() : childEnv(NO_PROMPT_ENV),
     });
     return { ok: true, stdout: stdout.trim(), stderr: "", code: 0 };
   } catch (e: any) {
@@ -57,7 +59,8 @@ export async function gitAsync(args: string[], options: GitOptions): Promise<Git
       cwd: options.cwd,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
-      env: options.interactive ? process.env : { ...process.env, ...NO_PROMPT_ENV },
+      windowsHide: true,
+      env: options.interactive ? childEnv() : childEnv(NO_PROMPT_ENV),
     });
     return { ok: true, stdout: stdout.trim(), stderr: stderr.trim(), code: 0 };
   } catch (e: any) {

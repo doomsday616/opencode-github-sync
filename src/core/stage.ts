@@ -46,8 +46,15 @@ const DATA_FILES = ["sync-state.json"];
  * and `storage/migration` is a one-byte file — `copyPath` resolves which.
  */
 const DATA_PATHS = ["storage/project", "storage/migration"];
-/** State files that describe this machine's current UI, not its configuration. */
-const MACHINE_STATE_FILES = new Set(["session.json"]);
+/**
+ * State files that describe this machine, not its configuration: the current
+ * UI session and the autosync scheduler's own bookkeeping.
+ */
+export const MACHINE_STATE_FILES = new Set([
+  "session.json",
+  "opencode-sync-autosync.json",
+  "opencode-sync-autosync.json.tmp",
+]);
 
 const SKILL_LOCK = ".skill-lock.json";
 

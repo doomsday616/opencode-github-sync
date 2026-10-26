@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { childEnv } from "./env.js";
 import { ensureFile } from "./fsx.js";
 import { type Roots, getRoots } from "./paths.js";
 import type { Reporter } from "./reporter.js";
@@ -33,7 +34,12 @@ export class SetupError extends Error {
 
 function gh(args: string[]): { ok: boolean; stdout: string; stderr: string } {
   try {
-    const stdout = execFileSync("gh", args, { encoding: "utf8", stdio: "pipe" });
+    const stdout = execFileSync("gh", args, {
+      encoding: "utf8",
+      stdio: "pipe",
+      windowsHide: true,
+      env: childEnv(),
+    });
     return { ok: true, stdout: stdout.trim(), stderr: "" };
   } catch (e: any) {
     return {
