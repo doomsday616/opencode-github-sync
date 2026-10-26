@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentReporter } from "../src/core/reporter.js";
 import {
@@ -16,9 +17,12 @@ import { openDatabase, sqliteAvailable } from "../src/core/sqlite.js";
 /**
  * These tests build a miniature copy of the real OpenCode schema. The column
  * set mirrors what OpenCode actually creates, so a shard produced here has the
- * same shape as one produced from a live database.
+ * same shape as one produced from a live database. The foreign keys mirror
+ * OpenCode's too: without `ON DELETE CASCADE` an `INSERT OR REPLACE` on a
+ * shared project row looks harmless, which is how #2 went unnoticed.
  */
 const SCHEMA = `
+PRAGMA foreign_keys = ON;
 CREATE TABLE project (
   id TEXT PRIMARY KEY, worktree TEXT NOT NULL, name TEXT,
   time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, sandboxes TEXT NOT NULL
@@ -26,21 +30,25 @@ CREATE TABLE project (
 CREATE TABLE session (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT, slug TEXT NOT NULL,
   directory TEXT NOT NULL, title TEXT NOT NULL, version TEXT NOT NULL,
-  time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, workspace_id TEXT
+  time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, workspace_id TEXT,
+  FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE
 );
 CREATE TABLE message (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL,
-  time_updated INTEGER NOT NULL, data TEXT NOT NULL
+  time_updated INTEGER NOT NULL, data TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES session(id) ON DELETE CASCADE
 );
 CREATE TABLE part (
   id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
-  time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
+  time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL,
+  FOREIGN KEY (message_id) REFERENCES message(id) ON DELETE CASCADE
 );
 CREATE TABLE todo (
   session_id TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL,
   priority TEXT NOT NULL, position INTEGER NOT NULL,
   time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL,
-  PRIMARY KEY (session_id, position)
+  PRIMARY KEY (session_id, position),
+  FOREIGN KEY (session_id) REFERENCES session(id) ON DELETE CASCADE
 );
 CREATE TABLE event (
   id TEXT PRIMARY KEY, aggregate_id TEXT NOT NULL, seq INTEGER NOT NULL,
@@ -313,6 +321,240 @@ describe("export and import", () => {
     // An unchanged session must not produce a new diff on every push — same
     // bytes, same mtime, no diff for git to pick up.
     expect(fs.readFileSync(shard).equals(before)).toBe(true);
+  });
+});
+
+/** Write a shard by hand, the way an older or another machine's export would. */
+function writeShard(repo: string, shard: Record<string, unknown>): void {
+  const dir = path.join(repo, "_sessions");
+  fs.mkdirSync(dir, { recursive: true });
+  const id = String((shard.session as any).id);
+  fs.writeFileSync(path.join(dir, `${id}.json.gz`), gzipSync(Buffer.from(JSON.stringify(shard))));
+}
+
+function projectRow(id: string, worktree: string, updated: number): Record<string, unknown> {
+  return { id, worktree, name: null, time_created: 1, time_updated: updated, sandboxes: "[]" };
+}
+
+function shardFor(
+  sessionId: string,
+  projectId: string,
+  updated: number,
+  project?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    formatVersion: 1,
+    session: {
+      id: sessionId,
+      project_id: projectId,
+      parent_id: null,
+      slug: sessionId,
+      directory: "/work",
+      title: sessionId,
+      version: "1.0.0",
+      time_created: updated,
+      time_updated: updated,
+      workspace_id: null,
+    },
+    ...(project ? { project } : {}),
+    tables: {
+      message: [
+        {
+          id: `msg_${sessionId}`,
+          session_id: sessionId,
+          time_created: 1,
+          time_updated: 1,
+          data: "{}",
+        },
+      ],
+      part: [
+        {
+          id: `prt_${sessionId}`,
+          message_id: `msg_${sessionId}`,
+          session_id: sessionId,
+          time_created: 1,
+          time_updated: 1,
+          data: "{}",
+        },
+      ],
+      todo: [
+        {
+          session_id: sessionId,
+          content: "todo",
+          status: "pending",
+          priority: "high",
+          position: 0,
+          time_created: 1,
+          time_updated: 1,
+        },
+      ],
+    },
+    exportedAt: updated,
+  };
+}
+
+async function emptyTarget(file: string, projects: Record<string, unknown>[] = []): Promise<void> {
+  const db = await openDatabase(file);
+  db.exec(SCHEMA);
+  for (const p of projects) {
+    db.prepare(
+      "INSERT INTO project (id, worktree, name, time_created, time_updated, sandboxes) VALUES (?,?,?,?,?,?)",
+    ).run(p.id, p.worktree, p.name, p.time_created, p.time_updated, p.sandboxes);
+  }
+  db.close();
+}
+
+async function count(file: string, sql: string, ...params: unknown[]): Promise<number> {
+  const db = await openDatabase(file, { readOnly: true });
+  const rows = db.prepare(sql).all(...params) as any[];
+  db.close();
+  return Number(rows[0].n);
+}
+
+describe("import safety (#2, #4)", () => {
+  it("keeps every session when shards share one project", async () => {
+    if (!available) return;
+    const repo = path.join(root, "repo");
+    writeShard(repo, shardFor("ses_a", "prj_shared", 100, projectRow("prj_shared", "/a", 10)));
+    writeShard(repo, shardFor("ses_b", "prj_shared", 200, projectRow("prj_shared", "/b", 20)));
+
+    const target = path.join(root, "target.sqlite");
+    await emptyTarget(target);
+    // The cascade needs enforced foreign keys on the connection the importer
+    // opens; node:sqlite enables them by default. Guard against a vacuous pass.
+    expect(await count(target, "SELECT foreign_keys AS n FROM pragma_foreign_keys")).toBe(1);
+
+    const result = await importSessions(target, repo, silentReporter);
+    expect(result.failed).toEqual([]);
+    expect(result.imported).toBe(2);
+
+    // INSERT OR REPLACE on the shared project row cascaded into ses_a.
+    expect(await count(target, "SELECT COUNT(*) AS n FROM session")).toBe(2);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM message")).toBe(2);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM part")).toBe(2);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM todo")).toBe(2);
+
+    const db = await openDatabase(target, { readOnly: true });
+    const project = db
+      .prepare("SELECT worktree FROM project WHERE id = 'prj_shared'")
+      .all() as any[];
+    db.close();
+    // The newer project row from shard B wins.
+    expect(project[0].worktree).toBe("/b");
+  });
+
+  it("does not let an older project row overwrite a newer local one", async () => {
+    if (!available) return;
+    const repo = path.join(root, "repo");
+    writeShard(repo, shardFor("ses_a", "prj_shared", 100, projectRow("prj_shared", "/stale", 10)));
+
+    const target = path.join(root, "target.sqlite");
+    await emptyTarget(target, [projectRow("prj_shared", "/local", 50)]);
+
+    const result = await importSessions(target, repo, silentReporter);
+    expect(result.failed).toEqual([]);
+
+    const db = await openDatabase(target, { readOnly: true });
+    const project = db
+      .prepare("SELECT worktree FROM project WHERE id = 'prj_shared'")
+      .all() as any[];
+    db.close();
+    expect(project[0].worktree).toBe("/local");
+  });
+
+  it("does not export the synthetic global project row", async () => {
+    if (!available) return;
+    const now = Date.now();
+    const source = path.join(root, "source.sqlite");
+    const repo = path.join(root, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    await makeDatabase(source, now);
+
+    const db = await openDatabase(source);
+    db.prepare(
+      "INSERT INTO project (id, worktree, name, time_created, time_updated, sandboxes) VALUES (?,?,?,?,?,?)",
+    ).run("global", "/machine-a", null, now, now, "[]");
+    db.prepare("UPDATE session SET project_id = 'global' WHERE id = 'ses_recent'").run();
+    db.close();
+
+    await exportSessions(source, repo, { ...settings(), now }, silentReporter);
+    const read = (id: string): any =>
+      JSON.parse(
+        gunzipSync(fs.readFileSync(path.join(repo, "_sessions", `${id}.json.gz`))).toString(),
+      );
+
+    expect(read("ses_recent").project).toBeUndefined();
+    // A real project still travels.
+    expect(read("ses_alsorecent").project.id).toBe("prj_1");
+  });
+
+  it("keeps the local global project when importing new shards without it", async () => {
+    if (!available) return;
+    const repo = path.join(root, "repo");
+    writeShard(repo, shardFor("ses_a", "global", 100));
+    writeShard(repo, shardFor("ses_b", "global", 200));
+
+    const target = path.join(root, "target.sqlite");
+    const local = projectRow("global", "/machine-b", 5);
+    await emptyTarget(target, [local]);
+
+    const result = await importSessions(target, repo, silentReporter);
+    expect(result.failed).toEqual([]);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM session")).toBe(2);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM part")).toBe(2);
+
+    const db = await openDatabase(target, { readOnly: true });
+    const rows = db.prepare("SELECT * FROM project WHERE id = 'global'").all() as any[];
+    db.close();
+    expect({ ...rows[0] }).toEqual(local);
+  });
+
+  it("keeps the local global project when importing old shards that still carry it", async () => {
+    if (!available) return;
+    const repo = path.join(root, "repo");
+    // Newer than the local row on purpose: the global row must never be
+    // overwritten, whatever its timestamp.
+    writeShard(repo, shardFor("ses_a", "global", 100, projectRow("global", "/machine-a", 900)));
+    writeShard(repo, shardFor("ses_b", "global", 200, projectRow("global", "/machine-a", 901)));
+
+    const target = path.join(root, "target.sqlite");
+    const local = projectRow("global", "/machine-b", 5);
+    await emptyTarget(target, [local]);
+
+    const result = await importSessions(target, repo, silentReporter);
+    expect(result.failed).toEqual([]);
+    expect(result.imported).toBe(2);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM session")).toBe(2);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM message")).toBe(2);
+    expect(await count(target, "SELECT COUNT(*) AS n FROM part")).toBe(2);
+
+    const db = await openDatabase(target, { readOnly: true });
+    const rows = db.prepare("SELECT * FROM project WHERE id = 'global'").all() as any[];
+    db.close();
+    expect({ ...rows[0] }).toEqual(local);
+  });
+
+  it("updates a composite-key row in place on re-import", async () => {
+    if (!available) return;
+    const repo = path.join(root, "repo");
+    const target = path.join(root, "target.sqlite");
+    await emptyTarget(target, [projectRow("prj_1", "/w", 1)]);
+
+    writeShard(repo, shardFor("ses_a", "prj_1", 100));
+    await importSessions(target, repo, silentReporter);
+
+    const newer = shardFor("ses_a", "prj_1", 200) as any;
+    newer.tables.todo[0].status = "completed";
+    newer.tables.todo[0].time_updated = 2;
+    writeShard(repo, newer);
+    const result = await importSessions(target, repo, silentReporter);
+    expect(result.failed).toEqual([]);
+    expect(result.imported).toBe(1);
+
+    const db = await openDatabase(target, { readOnly: true });
+    const todos = db.prepare("SELECT status FROM todo WHERE session_id = 'ses_a'").all() as any[];
+    db.close();
+    expect(todos.map((t) => t.status)).toEqual(["completed"]);
   });
 });
 

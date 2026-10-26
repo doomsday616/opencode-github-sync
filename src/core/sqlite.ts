@@ -153,3 +153,12 @@ export function tableColumns(db: SqliteDatabase, table: string): string[] {
   const rows = db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
   return rows.map((r) => r.name);
 }
+
+/** Primary-key column names of a table, in key order. Empty for rowid-only tables. */
+export function tablePrimaryKey(db: SqliteDatabase, table: string): string[] {
+  const rows = db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; pk: number }[];
+  return rows
+    .filter((r) => Number(r.pk) > 0)
+    .sort((a, b) => Number(a.pk) - Number(b.pk))
+    .map((r) => r.name);
+}

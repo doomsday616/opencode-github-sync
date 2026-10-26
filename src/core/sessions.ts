@@ -5,7 +5,13 @@ import { ensureDir } from "./fsx.js";
 import { SESSIONS_DIR } from "./paths.js";
 import type { Reporter } from "./reporter.js";
 import type { SessionSettings } from "./settings.js";
-import { type SqliteDatabase, existingTables, openDatabase, tableColumns } from "./sqlite.js";
+import {
+  type SqliteDatabase,
+  existingTables,
+  openDatabase,
+  tableColumns,
+  tablePrimaryKey,
+} from "./sqlite.js";
 
 /**
  * Selective session sync.
@@ -43,6 +49,9 @@ const SESSION_TABLES = [
   "session_context_epoch",
   "session_input",
 ] as const;
+
+/** OpenCode's synthetic project for sessions outside any repository. */
+const GLOBAL_PROJECT_ID = "global";
 
 /**
  * `event` and `event_sequence` are deliberately excluded. They are an internal
@@ -172,7 +181,9 @@ function buildShard(db: SqliteDatabase, sessionId: string, tables: string[]): Se
   };
 
   const projectId = sessionRow.project_id;
-  if (projectId) {
+  // The synthetic global project is machine-specific (worktree, vcs) and every
+  // OpenCode install has its own, so it never travels (#4).
+  if (projectId && projectId !== GLOBAL_PROJECT_ID) {
     shard.project = readRows(db, "SELECT * FROM project WHERE id = ?", [projectId])[0];
   }
   const workspaceId = (sessionRow as any).workspace_id;
@@ -278,19 +289,53 @@ function readShard(file: string): SessionShard {
   return shard;
 }
 
+interface TableInfo {
+  columns: Set<string>;
+  primaryKey: string[];
+}
+
+/**
+ * Insert a row, or update the existing one in place.
+ *
+ * This must be a true UPSERT, never `INSERT OR REPLACE`: REPLACE deletes the
+ * conflicting row before inserting, and with foreign keys enforced (node:sqlite
+ * enables them) deleting the shared `project` row cascades through
+ * `session.project_id ON DELETE CASCADE` and silently removes every session
+ * imported before it (#2).
+ *
+ * Primary-key columns are never rewritten, so composite keys such as
+ * `todo (session_id, position)` stay intact. A row that is newer locally, by
+ * `time_updated`, is left alone. `keepExisting` turns the update into a no-op
+ * for rows that must stay machine-local once they exist.
+ */
 function upsert(
   db: SqliteDatabase,
   table: string,
   row: Record<string, unknown>,
-  allowedColumns: Set<string>,
+  info: TableInfo,
+  keepExisting = false,
 ): void {
-  const columns = Object.keys(row).filter((column) => allowedColumns.has(column));
+  const columns = Object.keys(row).filter((column) => info.columns.has(column));
   if (columns.length === 0) return;
   const placeholders = columns.map(() => "?").join(", ");
   const quoted = columns.map((column) => `"${column}"`).join(", ");
-  db.prepare(`INSERT OR REPLACE INTO "${table}" (${quoted}) VALUES (${placeholders})`).run(
-    ...columns.map((column) => normalize(row[column])),
-  );
+  // No conflict target: the update applies to whichever uniqueness constraint
+  // fired (primary key, composite key or a secondary UNIQUE index), matching
+  // what REPLACE used to cover. Needs SQLite 3.35+, which both drivers bundle.
+  const updates = columns.filter((column) => !info.primaryKey.includes(column));
+
+  let action = "DO NOTHING";
+  if (!keepExisting && updates.length > 0) {
+    const assignments = updates.map((column) => `"${column}" = excluded."${column}"`).join(", ");
+    const newerWins = columns.includes("time_updated")
+      ? ` WHERE "${table}"."time_updated" IS NULL OR excluded."time_updated" >= "${table}"."time_updated"`
+      : "";
+    action = `DO UPDATE SET ${assignments}${newerWins}`;
+  }
+
+  db.prepare(
+    `INSERT INTO "${table}" (${quoted}) VALUES (${placeholders}) ON CONFLICT ${action}`,
+  ).run(...columns.map((column) => normalize(row[column])));
 }
 
 /** SQLite drivers accept null/number/string/bigint/Buffer only. */
@@ -322,14 +367,17 @@ export async function importSessions(
 
   const db = await openDatabase(databaseFile);
   try {
-    const columnsFor = new Map<string, Set<string>>();
-    const columns = (table: string): Set<string> => {
-      let set = columnsFor.get(table);
-      if (!set) {
-        set = new Set(tableColumns(db, table));
-        columnsFor.set(table, set);
+    const infoFor = new Map<string, TableInfo>();
+    const columns = (table: string): TableInfo => {
+      let info = infoFor.get(table);
+      if (!info) {
+        info = {
+          columns: new Set(tableColumns(db, table)),
+          primaryKey: tablePrimaryKey(db, table),
+        };
+        infoFor.set(table, info);
       }
-      return set;
+      return info;
     };
 
     const localTimes = new Map<string, number>();
@@ -355,19 +403,25 @@ export async function importSessions(
 
         db.exec("BEGIN IMMEDIATE");
         try {
-          if (shard.project) upsert(db, "project", shard.project, columns("project"));
+          if (shard.project) {
+            // Shards written before #4 still carry the synthetic global
+            // project. Create it if missing, but never overwrite this
+            // machine's own row.
+            const local = String(shard.project.id) === GLOBAL_PROJECT_ID;
+            upsert(db, "project", shard.project, columns("project"), local);
+          }
           if (shard.workspace) upsert(db, "workspace", shard.workspace, columns("workspace"));
           upsert(db, "session", shard.session, columns("session"));
 
           for (const [table, rows] of Object.entries(shard.tables)) {
             if (rows.length === 0) continue;
-            let allowed: Set<string>;
+            let allowed: TableInfo;
             try {
               allowed = columns(table);
             } catch {
               continue; // Table does not exist in this OpenCode version.
             }
-            if (allowed.size === 0) continue;
+            if (allowed.columns.size === 0) continue;
             for (const row of rows) upsert(db, table, row, allowed);
           }
           db.exec("COMMIT");
