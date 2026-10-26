@@ -188,11 +188,11 @@ function stageConfigIn(ctx: StageContext): void {
   }
 }
 
-function extraPathEntries(ctx: StageContext): { source: string; repo: string }[] {
+function extraPathEntries(ctx: StageContext): { entry: string; source: string; repo: string }[] {
   return ctx.settings.extraPaths.map((entry) => {
     const source = path.isAbsolute(entry) ? entry : path.join(homeDir(), entry);
     const repo = path.join(ctx.repoRoot, "_extra", sanitizeRelative(entry));
-    return { source, repo };
+    return { entry, source, repo };
   });
 }
 
@@ -207,10 +207,16 @@ function sanitizeRelative(entry: string): string {
     .replace(/^[._]+/, "");
 }
 
+/**
+ * Extra paths are shared files such as a CLI's config. A machine that does not
+ * have the source is a machine without that tool, not a deletion: removing the
+ * repository copy would wipe it for every other machine. The shared copy is
+ * left as it is; deleting it is an explicit `git rm` in the sync repository.
+ */
 function stageExtraPathsIn(ctx: StageContext): void {
-  for (const { source, repo } of extraPathEntries(ctx)) {
+  for (const { entry, source, repo } of extraPathEntries(ctx)) {
     if (!fs.existsSync(source)) {
-      removeRecursive(repo);
+      ctx.reporter.detail(`Skipped extra path ${entry}: not present on this machine`);
       continue;
     }
     if (fs.statSync(source).isDirectory()) syncDirIncremental(source, repo);
@@ -272,11 +278,22 @@ function stageSkillLockOut(ctx: StageContext, repoAgents: string): void {
   else replaceFileAtomically(repoLock, localLock);
 }
 
+/**
+ * A file entry replaces only that file, atomically. A directory entry copies
+ * the shared files over without deleting anything else in it, because the
+ * directory usually also holds the tool's own runtime files. Only `force`
+ * makes the local directory an exact copy of the repository.
+ */
 function stageExtraPathsOut(ctx: StageContext): void {
   for (const { source, repo } of extraPathEntries(ctx)) {
     if (!fs.existsSync(repo)) continue;
-    if (fs.statSync(repo).isDirectory()) replaceDirAtomically(repo, source);
-    else replaceFileAtomically(repo, source);
+    if (!fs.statSync(repo).isDirectory()) {
+      replaceFileAtomically(repo, source);
+    } else if (ctx.force || (fs.existsSync(source) && !fs.statSync(source).isDirectory())) {
+      replaceDirAtomically(repo, source);
+    } else {
+      syncDirIncremental(repo, source, { deleteExtraneous: false });
+    }
   }
 }
 

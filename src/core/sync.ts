@@ -17,9 +17,12 @@ import {
   assertRemoteReachable,
   ensureRepo,
   excludePathspecs,
+  headCommit,
   isLocalRuntimePath,
+  readStageOutMark,
   unstageLocalRuntimePaths,
   writeRepoMetadata,
+  writeStageOutMark,
 } from "./repo.js";
 import {
   type ChangedFile,
@@ -132,6 +135,18 @@ export async function push(options: SyncOptions = {}): Promise<SyncResult> {
 async function runPush(ctx: Context): Promise<SyncResult> {
   const { root, branch, reporter } = ctx;
 
+  // A previous run that integrated remote commits but stopped before writing
+  // them out leaves the real directories behind HEAD. Staging that stale tree
+  // in would publish the gap as deletions, so settle it first. Without a mark
+  // nothing is known, and writing out here would resurrect local deletions.
+  const mark = readStageOutMark(root);
+  const head = headCommit(root);
+  if (!ctx.dryRun && mark && head && mark !== head) {
+    reporter.step("Writing out changes from an earlier sync");
+    stageOut(createStageContext(root, ctx.settings, reporter, false, ctx.roots));
+    writeStageOutMark(root);
+  }
+
   reporter.step("Staging local files");
   stageIn(createStageContext(root, ctx.settings, reporter, ctx.force, ctx.roots));
 
@@ -148,6 +163,7 @@ async function runPush(ctx: Context): Promise<SyncResult> {
     // No file changes, but a previous push may have failed after committing.
     git(["fetch", "origin", branch], { cwd: root });
     const ahead = countCommits(root, `origin/${branch}..HEAD`);
+    const behind = countCommits(root, `HEAD..origin/${branch}`);
     if (ahead > 0) {
       if (ctx.dryRun) {
         return done(
@@ -160,9 +176,38 @@ async function runPush(ctx: Context): Promise<SyncResult> {
         );
       }
       reporter.step(`Pushing ${ahead} pending commit(s)`);
-      pushBranch(ctx, true);
-      return done("push", true, summary, files, `Pushed ${ahead} pending commit(s)`, sessions);
+      const integrated = pushBranch(ctx, true);
+      await finishPush(ctx, integrated);
+      return done(
+        "push",
+        true,
+        summary,
+        files,
+        `Pushed ${ahead} pending commit(s)`,
+        sessions,
+        integrated,
+      );
     }
+    if (behind > 0 && !ctx.dryRun) {
+      // Nothing of ours to send, but other machines have published. HEAD is an
+      // ancestor of the remote, so this is a fast-forward that cannot rewrite
+      // anything — and the result must reach the real directories, or the next
+      // push would read everything new as deleted on this machine.
+      reporter.step(`Fast-forwarding ${behind} remote commit(s)`);
+      const ff = git(["merge", "--ff-only", `origin/${branch}`], { cwd: root });
+      if (!ff.ok) throw toGitError("Fast-forward", ff);
+      await finishPush(ctx, true);
+      return done(
+        "push",
+        true,
+        summary,
+        files,
+        `Nothing to push; received ${behind} remote commit(s)`,
+        sessions,
+        true,
+      );
+    }
+    if (!ctx.dryRun) writeStageOutMark(root);
     return done("push", false, summary, files, "Already up to date", sessions);
   }
 
@@ -181,12 +226,43 @@ async function runPush(ctx: Context): Promise<SyncResult> {
   const alias = hostAlias(ctx.settings.machineAlias);
   const commit = git(["commit", "-m", commitMessage("sync", alias)], { cwd: root });
   if (!commit.ok) throw toGitError("Commit", commit);
+  // The commit was built from this machine's directories, so they match it.
+  // If the rebase or the network push below fails, the next run sees the mark
+  // trailing HEAD and writes the integrated tree out before staging again.
+  writeStageOutMark(root);
 
-  pushBranch(ctx, false);
-  return done("push", true, summary, files, `Pushed ${totalChanges(summary)} change(s)`, sessions);
+  const integrated = pushBranch(ctx, false);
+  await finishPush(ctx, integrated);
+  return done(
+    "push",
+    true,
+    summary,
+    files,
+    `Pushed ${totalChanges(summary)} change(s)`,
+    sessions,
+    integrated,
+  );
 }
 
-function pushBranch(ctx: Context, alreadyCommitted: boolean): void {
+/**
+ * Settle the real directories after a successful push.
+ *
+ * When the push integrated other machines' commits, the merged tree is written
+ * out. Local work is already committed at this point (stage in → commit →
+ * rebase), so this only adds what arrived; skills are never deleted here.
+ * Overrides are re-applied by `push()` itself once this returns.
+ */
+async function finishPush(ctx: Context, integrated: boolean): Promise<void> {
+  if (integrated) {
+    ctx.reporter.step("Writing out changes from other machines");
+    stageOut(createStageContext(ctx.root, ctx.settings, ctx.reporter, false, ctx.roots));
+    await maybeImportSessions(ctx);
+  }
+  writeStageOutMark(ctx.root);
+}
+
+/** Push the branch. Returns true when a rebase integrated remote commits. */
+function pushBranch(ctx: Context, alreadyCommitted: boolean): boolean {
   const { root, branch, force, reporter } = ctx;
 
   const hasRemoteBranch = git(["rev-parse", `origin/${branch}`], { cwd: root }).ok;
@@ -194,7 +270,7 @@ function pushBranch(ctx: Context, alreadyCommitted: boolean): void {
     const result = git(["push", "-u", "origin", branch], { cwd: root });
     if (!result.ok) throw toGitError("Push", result);
     assertPushLanded(root, branch, "Push");
-    return;
+    return false;
   }
 
   if (force) {
@@ -210,9 +286,10 @@ function pushBranch(ctx: Context, alreadyCommitted: boolean): void {
     const result = git(["push", "--force-with-lease", "origin", branch], { cwd: root });
     if (!result.ok) throw toGitError("Force push", result);
     assertPushLanded(root, branch, "Force push");
-    return;
+    return false;
   }
 
+  const before = headCommit(root);
   const rebase = git(["pull", "--rebase", "origin", branch], { cwd: root });
   if (!rebase.ok) {
     git(["rebase", "--abort"], { cwd: root });
@@ -221,11 +298,15 @@ function pushBranch(ctx: Context, alreadyCommitted: boolean): void {
         "Run `opencode-sync pull` to take the remote version, or `opencode-sync push --force` to overwrite it.",
     );
   }
+  // The rebase moves HEAD only when it replayed local commits onto new remote
+  // ones; an unchanged HEAD means nothing arrived.
+  const integrated = headCommit(root) !== before;
 
   const result = git(["push", "origin", branch], { cwd: root });
   if (!result.ok) throw toGitError("Push", result);
   assertPushLanded(root, branch, "Push");
   void alreadyCommitted;
+  return integrated;
 }
 
 // ── Pull ────────────────────────────────────────────────────────────────────
@@ -280,6 +361,27 @@ export async function pull(options: SyncOptions = {}): Promise<SyncResult> {
   if (!force && behind === 0) {
     // Nothing incoming, so the worktree does not need to be touched at all.
     // Skipping the stash cycle here is what keeps a no-op pull fast on Windows.
+    //
+    // HEAD can still be ahead of what was last written out, when a push
+    // integrated remote commits and stopped before writing them. Settle that
+    // here; without a recorded mark nothing is known, so nothing is written.
+    const mark = readStageOutMark(root);
+    const head = headCommit(root);
+    if (!ctx.dryRun && mark && head && mark !== head) {
+      reporter.step("Writing out changes from an earlier sync");
+      stageOut(createStageContext(root, ctx.settings, reporter, false, ctx.roots));
+      const sessions = await maybeImportSessions(ctx);
+      finishPull(ctx);
+      return done(
+        "pull",
+        true,
+        emptySummary(),
+        [],
+        "Wrote out changes from an earlier sync",
+        sessions,
+        true,
+      );
+    }
     return done("pull", false, emptySummary(), [], "Already up to date", undefined, false);
   }
 
@@ -331,6 +433,7 @@ export async function pull(options: SyncOptions = {}): Promise<SyncResult> {
 
 /** Re-apply machine-local settings and clean up caches after a pull. */
 function finishPull(ctx: Context): void {
+  writeStageOutMark(ctx.root);
   if (applyOverrides(ctx.roots.config)) {
     ctx.reporter.detail("Re-applied per-machine overrides");
   }

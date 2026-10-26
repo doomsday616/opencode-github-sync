@@ -71,6 +71,7 @@ function clearEnv(): void {
     "SYNC_CACHE_ROOT",
     "SYNC_REMOTE_URL",
     "OPENCODE_SYNC_HOST_ALIAS",
+    "SYNC_HOME",
   ]) {
     delete process.env[key];
   }
@@ -337,6 +338,166 @@ describe("per-machine overrides", () => {
     const tracked = execFileSync("git", ["ls-files"], { cwd: a.config, encoding: "utf8" });
     expect(tracked).not.toMatch(/opencode-sync\.overrides\.jsonc/);
     expect(tracked).not.toMatch(/opencode-sync\.jsonc/);
+  });
+});
+
+describe("pushing onto remote work", () => {
+  const skill = (m: Machine, name: string) => path.join(m.agents, name, "SKILL.md");
+  const tracked = (m: Machine) =>
+    execFileSync("git", ["ls-files"], { cwd: m.config, encoding: "utf8" });
+
+  it("writes rebased skills out and never deletes them on the next push", async () => {
+    const a = makeMachine("a");
+    useMachine(a);
+    write(path.join(a.config, "opencode.jsonc"), "{}\n");
+    await push({ settings: settings(), roots: getRoots() });
+
+    const b = makeMachine("b");
+    useMachine(b);
+    await pull({ settings: settings(), roots: getRoots() });
+
+    // A installs skill X and publishes it.
+    useMachine(a);
+    write(skill(a, "x"), "x\n");
+    await push({ settings: settings(), roots: getRoots() });
+
+    // B has its own unpublished skill Y and pushes, rebasing onto A.
+    useMachine(b);
+    write(skill(b, "y"), "y\n");
+    const rebased = await push({ settings: settings(), roots: getRoots() });
+    expect(rebased.changed).toBe(true);
+    expect(read(skill(b, "x"))).toBe("x\n");
+    expect(read(skill(b, "y"))).toBe("y\n");
+
+    // A second push from B must not stage X as deleted.
+    write(path.join(b.config, "command", "b.md"), "b\n");
+    await push({ settings: settings(), roots: getRoots() });
+    expect(tracked(b)).toMatch(/_agents\/x\/SKILL\.md/);
+    expect(tracked(b)).toMatch(/_agents\/y\/SKILL\.md/);
+
+    useMachine(a);
+    await pull({ settings: settings(), roots: getRoots() });
+    for (const m of [a, b]) {
+      expect(read(skill(m, "x"))).toBe("x\n");
+      expect(read(skill(m, "y"))).toBe("y\n");
+    }
+    expect(tracked(a)).toMatch(/_agents\/x\/SKILL\.md/);
+    expect(tracked(a)).toMatch(/_agents\/y\/SKILL\.md/);
+  });
+
+  it("fast-forwards and writes out remote work when nothing local changed", async () => {
+    const a = makeMachine("a");
+    useMachine(a);
+    write(path.join(a.config, "opencode.jsonc"), "{}\n");
+    await push({ settings: settings(), roots: getRoots() });
+
+    const b = makeMachine("b");
+    useMachine(b);
+    await pull({ settings: settings(), roots: getRoots() });
+
+    useMachine(a);
+    write(skill(a, "x"), "x\n");
+    await push({ settings: settings(), roots: getRoots() });
+
+    useMachine(b);
+    const result = await push({ settings: settings(), roots: getRoots() });
+    expect(result.changed).toBe(true);
+    expect(read(skill(b, "x"))).toBe("x\n");
+  });
+
+  it("finishes an interrupted write-out on the next pull", async () => {
+    const a = makeMachine("a");
+    useMachine(a);
+    write(path.join(a.config, "opencode.jsonc"), "{}\n");
+    await push({ settings: settings(), roots: getRoots() });
+
+    const b = makeMachine("b");
+    useMachine(b);
+    await pull({ settings: settings(), roots: getRoots() });
+
+    useMachine(a);
+    write(skill(a, "x"), "x\n");
+    await push({ settings: settings(), roots: getRoots() });
+
+    // Simulate a push that integrated A's commit but stopped before stage-out.
+    useMachine(b);
+    execFileSync("git", ["pull", "--rebase", "origin", "main"], { cwd: b.config, stdio: "pipe" });
+    expect(fs.existsSync(skill(b, "x"))).toBe(false);
+
+    await pull({ settings: settings(), roots: getRoots() });
+    expect(read(skill(b, "x"))).toBe("x\n");
+  });
+});
+
+describe("extra paths", () => {
+  const useHome = (m: Machine): string => {
+    const home = path.join(path.dirname(m.config), "home");
+    fs.mkdirSync(home, { recursive: true });
+    process.env.SYNC_HOME = home;
+    return home;
+  };
+
+  it("keeps the shared copy when a machine does not have the source", async () => {
+    const extra = settings({ extraPaths: [".tool/config.json"] });
+    const a = makeMachine("a");
+    useMachine(a);
+    const homeA = useHome(a);
+    write(path.join(a.config, "opencode.jsonc"), "{}\n");
+    write(path.join(homeA, ".tool", "config.json"), '{ "key": 1 }\n');
+    await push({ settings: extra, roots: getRoots() });
+
+    // B never had the tool installed and pushes its own change.
+    const b = makeMachine("b");
+    useMachine(b);
+    const homeB = useHome(b);
+    await pull({ settings: settings(), roots: getRoots() });
+    write(path.join(b.config, "command", "b.md"), "b\n");
+    await push({ settings: extra, roots: getRoots() });
+    expect(fs.existsSync(path.join(homeB, ".tool", "config.json"))).toBe(false);
+    const committed = execFileSync("git", ["ls-files"], { cwd: b.config, encoding: "utf8" });
+    expect(committed).toMatch(/_extra\/tool_config\.json/);
+
+    const c = makeMachine("c");
+    useMachine(c);
+    const homeC = useHome(c);
+    await pull({ settings: extra, roots: getRoots() });
+    expect(read(path.join(homeC, ".tool", "config.json"))).toBe('{ "key": 1 }\n');
+  });
+
+  it("writes a file entry without touching its siblings", async () => {
+    const extra = settings({ extraPaths: [".tool/config.json"] });
+    const a = makeMachine("a");
+    useMachine(a);
+    const homeA = useHome(a);
+    write(path.join(a.config, "opencode.jsonc"), "{}\n");
+    write(path.join(homeA, ".tool", "config.json"), "shared\n");
+    await push({ settings: extra, roots: getRoots() });
+
+    const b = makeMachine("b");
+    useMachine(b);
+    const homeB = useHome(b);
+    write(path.join(homeB, ".tool", "runtime.db"), "local\n");
+    await pull({ settings: extra, roots: getRoots() });
+    expect(read(path.join(homeB, ".tool", "config.json"))).toBe("shared\n");
+    expect(read(path.join(homeB, ".tool", "runtime.db"))).toBe("local\n");
+  });
+
+  it("writes a directory entry without deleting local-only files", async () => {
+    const extra = settings({ extraPaths: [".tool"] });
+    const a = makeMachine("a");
+    useMachine(a);
+    const homeA = useHome(a);
+    write(path.join(a.config, "opencode.jsonc"), "{}\n");
+    write(path.join(homeA, ".tool", "config.json"), "shared\n");
+    await push({ settings: extra, roots: getRoots() });
+
+    const b = makeMachine("b");
+    useMachine(b);
+    const homeB = useHome(b);
+    write(path.join(homeB, ".tool", "cache", "runtime.db"), "local\n");
+    await pull({ settings: extra, roots: getRoots() });
+    expect(read(path.join(homeB, ".tool", "config.json"))).toBe("shared\n");
+    expect(read(path.join(homeB, ".tool", "cache", "runtime.db"))).toBe("local\n");
   });
 });
 

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { ensureFile, writeIfDiffers } from "./fsx.js";
 import { type GitResult, git, isGitRepo, toGitError } from "./git.js";
@@ -207,3 +208,42 @@ export function assertPushLanded(root: string, branch: string, operation: string
 }
 
 export const REPO_DIRS = { DATA_DIR, STATE_DIR, AGENTS_DIR, SESSIONS_DIR };
+
+/**
+ * The commit whose content was last written out to the machine's real
+ * directories (`~/.agents/skills`, state, data, extra paths).
+ *
+ * A push that rebases onto other machines' work moves HEAD past what is on
+ * disk. If that gap goes unnoticed, the next push stages the stale local tree
+ * and mirrors its "missing" files as deletions. Recording the last written-out
+ * commit makes the gap detectable. It lives in `.git/info/` because that is
+ * per-clone, never tracked, and survives `reset --hard`.
+ */
+function stageOutMarkPath(root: string): string {
+  return path.join(root, ".git", "info", "opencode-sync-stage-out");
+}
+
+export function headCommit(root: string): string | undefined {
+  const head = git(["rev-parse", "--verify", "HEAD"], { cwd: root });
+  return head.ok && head.stdout ? head.stdout : undefined;
+}
+
+export function readStageOutMark(root: string): string | undefined {
+  try {
+    return fs.readFileSync(stageOutMarkPath(root), "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Record that the real directories now match HEAD. */
+export function writeStageOutMark(root: string): void {
+  const head = headCommit(root);
+  if (!head) return;
+  try {
+    fs.mkdirSync(path.dirname(stageOutMarkPath(root)), { recursive: true });
+    fs.writeFileSync(stageOutMarkPath(root), `${head}\n`);
+  } catch {
+    // Best effort: a missing mark only means one extra reconcile later.
+  }
+}
