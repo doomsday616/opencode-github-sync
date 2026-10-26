@@ -27,6 +27,62 @@ jobs:
       - run: npm run check
       - run: npm run build
 
+      # The release body is bilingual: this version's section from CHANGELOG.md
+      # and CHANGELOG.zh-CN.md, the install line, and the curated contributor
+      # list. GitHub's generated notes (PR list, compare link) are appended by
+      # the release step. This runs before publishing so a missing section
+      # stops the release before npm.
+      - name: Build release notes
+        run: |
+          version=$(node -p "require('./package.json').version")
+          section() {
+            awk -v v="$version" '
+              /^## / { if (found) exit; if ($2 == v) { found = 1; next } }
+              found { print }
+            ' "$1"
+          }
+          section CHANGELOG.md > en.md
+          section CHANGELOG.zh-CN.md > zh.md
+          for f in en.md zh.md; do
+            if ! grep -q '[^[:space:]]' "$f"; then
+              echo "::error::No '## ${version}' section for ${f} (CHANGELOG.md / CHANGELOG.zh-CN.md)."
+              exit 1
+            fi
+          done
+
+          # Contributors are curated in the CHANGELOG's "### Contributors" block,
+          # not derived from commit authors: that would list the maintainer and
+          # miss people who reported or diagnosed a bug without committing. The
+          # block appears once, in English, at the end of the release body.
+          awk '/^### Contributors/ { c = 1; next } /^### / { c = 0 } c' en.md > contributors.md
+          for f in en.md zh.md; do
+            awk '/^### Contributors/ { c = 1; next } /^### / { c = 0 } !c' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+
+          {
+            echo "## English"
+            cat en.md
+            echo ""
+            echo "## 简体中文"
+            cat zh.md
+            echo ""
+            echo "## Install"
+            echo '```bash'
+            echo "npm install -g opencode-github-sync@${version}"
+            echo '```'
+            echo ""
+            echo "Plugin users: OpenCode picks up the new version on its next start."
+            if grep -q '[^[:space:]]' contributors.md; then
+              echo ""
+              echo "## Contributors"
+              echo ""
+              echo "Thank you to everyone who made this release possible:"
+              echo ""
+              grep '[^[:space:]]' contributors.md
+            fi
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
       # A re-run of a release, or a tag pushed after publishing by hand, must not
       # fail the whole workflow. npm rejects republishing a version, so check
       # first and let the GitHub release step still run.
@@ -58,4 +114,5 @@ jobs:
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true

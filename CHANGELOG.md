@@ -1,5 +1,7 @@
 # Changelog
 
+[简体中文](./CHANGELOG.zh-CN.md)
+
 ## 3.1.1
 
 ### Fixed
@@ -24,31 +26,55 @@
 ## 3.1.0
 
 ### Added
-- **OpenCode 2 plugin entrypoint.** The package now exports both the V1 server
-  hook and the V2 plugin from its default export, so the same install loads on
-  OpenCode 1.x and 2.x. Thanks @vitaly74 (#6).
+- **OpenCode 2 support.** One package now loads on both OpenCode 1.x and 2.x.
+  Thanks @vitaly74 (#6). How it works:
+  - The default export is a single object that satisfies both loaders. OpenCode
+    2 looks for `{ id, setup }`: `setup(ctx)` registers the `opencode_sync`
+    tool through `ctx.tool.transform`, subscribes to `session.idle` through
+    `ctx.event.subscribe` for the optional idle push, and runs the startup pull.
+    OpenCode 1.x (1.3.4 and later) sees the same object's `id` and `server()`
+    and calls `server()` once, so the plugin is registered exactly once.
+  - No dependency on `@opencode/plugin`; the V2 context is used structurally.
+  - **Config key.** OpenCode 1.x reads only `"plugin"` and silently drops
+    `"plugins"`. OpenCode 2 reads its native `"plugins"` and still accepts the
+    legacy `"plugin"`. So `"plugin": ["opencode-github-sync"]` is the one form
+    that works on both, and it is what the README recommends. A 2.x-only setup
+    may use `"plugins"`, but never list the plugin under both keys: 2.x loads
+    both lists.
+  - Plugin cache pruning reads both keys, so a mixed fleet where some machines
+    are on 1.x and some on 2.x keeps every plugin either version needs.
+  - OpenCode 1.0–1.3.3 iterate every export and call each as a function, which
+    the new object default export cannot satisfy. Stay on 3.0.1 there.
 
 ### Fixed
 - Session import no longer cascade-deletes sessions. `INSERT OR REPLACE`
   deletes the conflicting row before inserting, so replacing a shared project
   row cascaded through `ON DELETE CASCADE` and removed every session imported
   before it. It is replaced by a real `INSERT ... ON CONFLICT DO UPDATE` upsert
-  that never deletes and keeps newer-`time_updated`-wins per row (#2).
+  that never deletes and keeps newer-`time_updated`-wins per row. Reported with
+  a tested fix by @logser13, cascade analysis by @aquelejota (#2).
 - The synthetic `global` project is machine-specific, so it is no longer
   exported, and importing an older shard that carries it never overwrites the
-  local row (#4).
+  local row. Reported by @logser13, confirmed by @aquelejota (#4).
 - Session shard export is deterministic: an unchanged session produces a
   byte-identical shard, so it no longer shows up as a change on every push.
-  Thanks @aquelejota (#5, #3).
+  Reported by @logser13 (#3), fixed by @aquelejota (#5).
 - The session tests now actually run under vitest; previously `node:sqlite`
-  failed to load there and every session test returned early.
+  failed to load there and every session test returned early. Found and fixed
+  by @aquelejota (#5).
 - Plugin cache pruning reads both the `plugin` and `plugins` keys and
   understands `[spec, options]` tuples and `{ package }` objects, so a plugin
-  listed in either form is no longer pruned from the cache.
+  listed in either form is no longer pruned from the cache. Follow-up to
+  @vitaly74's #6.
 
 ### Changed
 - The minimum supported OpenCode 1.x is now 1.3.4. OpenCode 1.0–1.3.3 cannot
   load this release; stay on 3.0.1 there.
+
+### Contributors
+- @vitaly74 — OpenCode 2 plugin entrypoint (#6)
+- @aquelejota — deterministic shard export and working session tests (#5), analysis of #2, #3 and #4
+- @logser13 — reported #2, #3 and #4 with reproductions and tested fixes
 
 ## 3.0.1
 
