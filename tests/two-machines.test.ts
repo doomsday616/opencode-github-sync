@@ -114,15 +114,17 @@ describe("autosync between two machines", () => {
     expect(read(path.join(b.roots.config, "opencode.jsonc"))).toContain("one");
     expect(read(path.join(b.roots.agents, "s1", "SKILL.md"))).toBe("skill one\n");
 
-    // A edits again; B picks it up on its next due run.
-    write(path.join(a.roots.config, "opencode.jsonc"), '{ "model": "two" }\n');
-    settle(a);
+    // A edits again; B picks it up on its next due run. The new content has a
+    // different size and age: `settle` backdates mtimes, and a same-size file
+    // with an identical backdated mtime would look unchanged to git's stat cache.
+    write(path.join(a.roots.config, "opencode.jsonc"), '{ "model": "second" }\n');
+    settle(a, 5 * 60_000);
     fs.rmSync(path.join(a.roots.state, "opencode-sync-autosync.json"), { force: true });
     expect((await autosync(a)).action).toBe("push");
     settle(b);
     fs.rmSync(path.join(b.roots.state, "opencode-sync-autosync.json"), { force: true });
     expect((await autosync(b)).ok).toBe(true);
-    expect(read(path.join(b.roots.config, "opencode.jsonc"))).toContain("two");
+    expect(read(path.join(b.roots.config, "opencode.jsonc"))).toContain("second");
   });
 
   it("receives only while this machine's files are still changing", async () => {

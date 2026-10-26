@@ -86,7 +86,9 @@ jobs:
           npm ci
           npm run build
           npm pack
-          echo "PKG=$(pwd)/$(ls opencode-github-sync-*.tgz)" >> "$GITHUB_ENV"
+          pkg="$(pwd)/$(ls opencode-github-sync-*.tgz)"
+          if [ "$RUNNER_OS" = "Windows" ]; then pkg=$(cygpath -w "$pkg"); fi
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
 
       - name: Isolated roots and a local bare repository
         shell: bash
