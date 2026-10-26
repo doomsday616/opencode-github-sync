@@ -305,13 +305,14 @@ describe("export and import", () => {
 
     await exportSessions(source, repo, { ...settings(), now }, silentReporter);
     const shard = path.join(repo, "_sessions", "ses_recent.json.gz");
-    const before = fs.statSync(shard).mtimeMs;
+    const before = fs.readFileSync(shard);
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     await exportSessions(source, repo, { ...settings(), now }, silentReporter);
 
-    // An unchanged session must not produce a new diff on every push.
-    expect(fs.statSync(shard).mtimeMs).toBe(before);
+    // An unchanged session must not produce a new diff on every push — same
+    // bytes, same mtime, no diff for git to pick up.
+    expect(fs.readFileSync(shard).equals(before)).toBe(true);
   });
 });
 

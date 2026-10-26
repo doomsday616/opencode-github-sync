@@ -165,7 +165,10 @@ function buildShard(db: SqliteDatabase, sessionId: string, tables: string[]): Se
     formatVersion: 1,
     session: sessionRow,
     tables: {},
-    exportedAt: Date.now(),
+    // Derived from the session itself, never wall-clock time. A repeat export
+    // of an unchanged session must produce identical bytes, otherwise every
+    // push rewrites every shard and import/pull churn is unavoidable.
+    exportedAt: Number(sessionRow.time_updated ?? 0),
   };
 
   const projectId = sessionRow.project_id;

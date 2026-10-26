@@ -14,6 +14,8 @@
  * disabled with a clear message rather than failing halfway through.
  */
 
+import { createRequire } from "node:module";
+
 export interface SqliteStatement {
   all(...params: unknown[]): any[];
   run(...params: unknown[]): unknown;
@@ -39,6 +41,23 @@ async function importBunSqlite(): Promise<any> {
   return import(/* @vite-ignore */ /* webpackIgnore: true */ BUN_SQLITE);
 }
 
+/**
+ * Load the Node built-in SQLite driver.
+ *
+ * The plain dynamic import is what works under Node and Bun. Test runners such
+ * as vitest intercept dynamic imports and try to resolve `node:sqlite` as a
+ * project file, which makes the driver undetectable and silently turns every
+ * session test into an early return. `createRequire` bypasses the bundler and
+ * loads the real builtin, so those tests actually run.
+ */
+async function importNodeSqlite(): Promise<any> {
+  try {
+    return await import("node:sqlite");
+  } catch {
+    return createRequire(import.meta.url)("node:sqlite");
+  }
+}
+
 let cachedDriver: "bun" | "node" | "none" | undefined;
 
 async function detectDriver(): Promise<"bun" | "node" | "none"> {
@@ -53,7 +72,7 @@ async function detectDriver(): Promise<"bun" | "node" | "none"> {
     }
   }
   try {
-    const mod: any = await import("node:sqlite");
+    const mod: any = await importNodeSqlite();
     if (mod?.DatabaseSync) {
       cachedDriver = "node";
       return cachedDriver;
@@ -102,7 +121,7 @@ export async function openDatabase(
   }
 
   if (driver === "node") {
-    const { DatabaseSync } = (await import("node:sqlite")) as any;
+    const { DatabaseSync } = (await importNodeSqlite()) as any;
     const db = new DatabaseSync(file, options.readOnly ? { readOnly: true } : {});
     return {
       prepare: (sql: string) => {
