@@ -299,15 +299,17 @@ export function prunePluginCache(configRoot: string, cacheRoot: string): number 
     return 0;
   }
 
-  const raw: unknown = (config as any)?.plugins ?? (config as any)?.plugin ?? [];
-  const specs = (Array.isArray(raw) ? raw : []).flatMap((entry) => {
-    if (typeof entry === "string") return [entry];
-    if (entry && typeof entry === "object" && typeof (entry as any).package === "string") {
-      return [(entry as any).package as string];
-    }
-    return [];
-  });
-  const enabled = new Set<string>(specs.map(pluginSpecToName));
+  // OpenCode 1.x reads only `plugin`; OpenCode 2 reads `plugins` and still
+  // accepts the legacy `plugin` key, loading entries from both. Keep the union.
+  const entries: unknown[] = [config?.plugin, config?.plugins].flatMap((list) =>
+    Array.isArray(list) ? list : [],
+  );
+  const enabled = new Set<string>(
+    entries.flatMap((entry) => {
+      const spec = pluginEntrySpec(entry);
+      return spec ? [pluginSpecToName(spec)] : [];
+    }),
+  );
   const pkg = readJson(cachePackage);
   if (!pkg) return 0;
 
@@ -326,6 +328,22 @@ export function prunePluginCache(configRoot: string, cacheRoot: string): number 
   removeRecursive(path.join(cacheRoot, "bun.lock"));
 
   return stale.length;
+}
+
+/**
+ * Extract the package specifier from one plugin list entry.
+ *
+ * Accepts a plain string, a V1 `[spec, options]` tuple and a V2
+ * `{ package }` object. V2 removal directives (`"-name"`) and anything
+ * unrecognised yield `undefined`.
+ */
+function pluginEntrySpec(entry: unknown): string | undefined {
+  let spec: unknown;
+  if (typeof entry === "string") spec = entry;
+  else if (Array.isArray(entry)) spec = entry[0];
+  else if (entry && typeof entry === "object") spec = (entry as { package?: unknown }).package;
+  if (typeof spec !== "string" || spec.length === 0 || spec.startsWith("-")) return undefined;
+  return spec;
 }
 
 /**

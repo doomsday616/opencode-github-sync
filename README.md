@@ -71,9 +71,18 @@ Plus the boring things that turn out to matter:
 // ~/.config/opencode/opencode.json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opencode-github-sync"]
+  "plugin": ["opencode-github-sync"]
 }
 ```
+
+This `"plugin"` form works on both OpenCode 1.x (1.3.4 and later) and
+OpenCode 2.x: 1.x reads only `"plugin"`, and 2.x still accepts it alongside its
+native `"plugins"` key. If you run only OpenCode 2, you can list it under
+`"plugins"` instead. Do not list the plugin under both keys — OpenCode 2 loads
+entries from both lists.
+
+OpenCode 1.0–1.3.3 cannot load 3.1.0 and later; stay on
+`opencode-github-sync@3.0.1` there.
 
 OpenCode installs it on the next start. The plugin adds a pull on startup, an
 optional push when a session goes idle, and an `opencode_sync` tool so you can

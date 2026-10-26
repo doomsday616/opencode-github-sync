@@ -285,6 +285,43 @@ describe("prunePluginCache plugin keys", () => {
     expect(cacheDeps(machine)).toEqual({ "opencode-github-sync": "1.0.0" });
   });
 
+  it("keeps the union when both plugin and plugins are present", () => {
+    const machine = makeMachine("prune-both");
+    writeConfig(machine.config, {
+      plugin: ["opencode-github-sync"],
+      plugins: ["other-plugin@1.0.0"],
+    });
+    makeCache(machine, {
+      "opencode-github-sync": "1.0.0",
+      "other-plugin": "1.0.0",
+      "stale-pkg": "2.0.0",
+    });
+
+    expect(prunePluginCache(machine.config, machine.cache)).toBe(1);
+    expect(cacheDeps(machine)).toEqual({
+      "opencode-github-sync": "1.0.0",
+      "other-plugin": "1.0.0",
+    });
+  });
+
+  it("keeps V1 tuple specs", () => {
+    const machine = makeMachine("prune-tuple");
+    writeConfig(machine.config, { plugin: [["@scope/tuple-plugin@1.2.3", { a: 1 }]] });
+    makeCache(machine, { "@scope/tuple-plugin": "1.2.3", "stale-pkg": "2.0.0" });
+
+    expect(prunePluginCache(machine.config, machine.cache)).toBe(1);
+    expect(cacheDeps(machine)).toEqual({ "@scope/tuple-plugin": "1.2.3" });
+  });
+
+  it("ignores V2 removal directives", () => {
+    const machine = makeMachine("prune-directive");
+    writeConfig(machine.config, { plugins: ["opencode-github-sync", "-stale-pkg"] });
+    makeCache(machine, { "opencode-github-sync": "1.0.0", "stale-pkg": "2.0.0" });
+
+    expect(prunePluginCache(machine.config, machine.cache)).toBe(1);
+    expect(cacheDeps(machine)).toEqual({ "opencode-github-sync": "1.0.0" });
+  });
+
   it("uses the real roots by default", () => {
     expect(getRoots().config.length).toBeGreaterThan(0);
   });

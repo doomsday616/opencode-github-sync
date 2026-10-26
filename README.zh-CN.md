@@ -69,9 +69,17 @@ opencode-sync push
 // ~/.config/opencode/opencode.json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opencode-github-sync"]
+  "plugin": ["opencode-github-sync"]
 }
 ```
+
+这种 `"plugin"` 写法在 OpenCode 1.x（1.3.4 及以上）和 OpenCode 2.x 上都能用：
+1.x 只认 `"plugin"`，2.x 除了自己的 `"plugins"` 之外也仍然接受 `"plugin"`。
+如果你只用 OpenCode 2，也可以改写在 `"plugins"` 里。不要两个键里都写上这个插件——
+OpenCode 2 会把两个列表里的条目都加载。
+
+OpenCode 1.0–1.3.3 无法加载 3.1.0 及以后的版本，请在这些版本上继续使用
+`opencode-github-sync@3.0.1`。
 
 OpenCode 下次启动时会自动安装。插件提供启动时自动 pull、会话空闲时可选自动
 push，以及一个 `opencode_sync` 工具——直接用自然语言说一句"同步一下"就行。
