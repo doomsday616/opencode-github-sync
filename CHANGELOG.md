@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.1.1
+
+### Fixed
+- A push that rebased onto other machines' commits now writes the merged
+  result out to the real directories (`~/.agents/skills`, state, data, extra
+  paths). Previously the new files landed only in the repository, a later pull
+  saw nothing incoming and skipped the write-out, and the next push staged the
+  stale local tree and deleted another machine's new skills. A push with nothing
+  local now fast-forwards and writes out the same way.
+- The commit last written out is recorded in `.git/info/opencode-sync-stage-out`.
+  When HEAD has moved past it (for example a push that stopped after the
+  rebase), the next push or pull writes the repository out before doing
+  anything else, so the gap can no longer be published as deletions.
+- An `extraPaths` source that does not exist on this machine no longer deletes
+  the shared repository copy. It is skipped and reported; other machines keep
+  receiving it.
+- Writing out a directory `extraPaths` entry no longer deletes local files that
+  are not in the repository copy, so a tool's runtime files beside its synced
+  config survive a pull. `--force` still makes it an exact copy. File entries
+  continue to replace only that file.
+
 ## 3.1.0
 
 ### Added
