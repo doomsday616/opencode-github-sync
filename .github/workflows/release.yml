@@ -27,31 +27,61 @@ jobs:
       - run: npm run check
       - run: npm run build
 
-      # The release body is this version's CHANGELOG section, followed by the
-      # install line and GitHub's generated notes (PR list, new contributors,
-      # compare link). Generated notes alone are only a compare link whenever
-      # the release has no merged PRs, which tells a reader nothing. This runs
-      # before publishing so a missing section stops the release before npm.
-      - name: Extract release notes from CHANGELOG.md
+      # The release body is bilingual: this version's section from CHANGELOG.md
+      # and CHANGELOG.zh-CN.md, the install line, and every contributor whose
+      # commits are in the range since the previous tag. GitHub's generated
+      # notes (PR list, compare link) are appended by the release step. This
+      # runs before publishing so a missing section stops the release before npm.
+      - name: Build release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p "require('./package.json').version")
-          awk -v v="$version" '
-            /^## / { if (found) exit; if ($2 == v) { found = 1; next } }
-            found { print }
-          ' CHANGELOG.md > RELEASE_NOTES.md
-          if ! grep -q '[^[:space:]]' RELEASE_NOTES.md; then
-            echo "::error::CHANGELOG.md has no '## ${version}' section."
-            exit 1
+          section() {
+            awk -v v="$version" '
+              /^## / { if (found) exit; if ($2 == v) { found = 1; next } }
+              found { print }
+            ' "$1"
+          }
+          section CHANGELOG.md > en.md
+          section CHANGELOG.zh-CN.md > zh.md
+          for f in en.md zh.md; do
+            if ! grep -q '[^[:space:]]' "$f"; then
+              echo "::error::No '## ${version}' section for ${f} (CHANGELOG.md / CHANGELOG.zh-CN.md)."
+              exit 1
+            fi
+          done
+
+          git fetch --tags --force --quiet
+          prev=$(git tag --list 'v*' --sort=v:refname | awk -v cur="v${version}" '$0 == cur { print last; exit } { last = $0 }')
+          contributors=""
+          if [ -n "$prev" ]; then
+            contributors=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${prev}...v${version}" \
+              --jq '[.commits[] | select(.author.login != null) | .author.login]
+                    | unique | map(select(endswith("[bot]") | not)) | map("@" + .) | join(", ")')
           fi
+
           {
+            echo "## English"
+            cat en.md
             echo ""
-            echo "### Install / upgrade"
+            echo "## 简体中文"
+            cat zh.md
+            echo ""
+            echo "## Install / 安装与升级"
             echo '```bash'
             echo "npm install -g opencode-github-sync@${version}"
             echo '```'
             echo ""
             echo "Plugin users: OpenCode picks up the new version on its next start."
-          } >> RELEASE_NOTES.md
+            echo "插件用户：OpenCode 下次启动时会自动使用新版本。"
+            if [ -n "$contributors" ]; then
+              echo ""
+              echo "## Contributors / 贡献者"
+              echo "$contributors"
+            fi
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
 
       # A re-run of a release, or a tag pushed after publishing by hand, must not
       # fail the whole workflow. npm rejects republishing a version, so check
